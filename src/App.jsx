@@ -11,9 +11,9 @@ const PAIRS = [
   "CAD/JPY","CAD/CHF","CHF/JPY",
   "XAU/USD","XAG/USD","US30","NAS100","SPX500","GER40"
 ];
-const SESSIONS = ["London","New York","Tokyo","Sydney","LDN/NY Overlap"];
+const SESSIONS = ["London","New York","Tokyo"];
 const DAYS_W = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
-const BIAS_TYPES = ["Technical","Fundamental","SMC","ICT","Price Action","Order Flow","Sentiment","Liquidity","News","Swing","Scalp"];
+const BIAS_TYPES = ["Transition","Re-Transition","Confirmation","Continuation","None"];
 const SK = "varmari-trades";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
 
@@ -39,7 +39,7 @@ const emptyTrade = () => ({
   id: uid(), date: new Date().toISOString().split("T")[0],
   session: "London", pair: "EUR/USD", risk: 1, direction: "Long",
   entry: "", exit: "", rr: "", pnlPct: "", result: "Win",
-  biasType: "Technical", rating: 3, execLink: "", biasLink: "", notes: "",
+  biasType: "Confirmation", rating: 3, execLink: "", biasLink: "", notes: "",
 });
 
 // ── Storage ──
@@ -86,51 +86,189 @@ function Stat({ label, value, color, sub, icon }) {
 }
 
 // ══════════════════════════════════════════
-// POSITION SIZE CALCULATOR
+// POSITION SIZE CALCULATOR (85 instruments)
 // ══════════════════════════════════════════
+const INSTRUMENTS = [
+  {id:"EURUSD",label:"EUR/USD",cat:"Forex",pipSize:0.0001,pipVal:10,cs:100000,unit:"units"},
+  {id:"GBPUSD",label:"GBP/USD",cat:"Forex",pipSize:0.0001,pipVal:10,cs:100000,unit:"units"},
+  {id:"AUDUSD",label:"AUD/USD",cat:"Forex",pipSize:0.0001,pipVal:10,cs:100000,unit:"units"},
+  {id:"NZDUSD",label:"NZD/USD",cat:"Forex",pipSize:0.0001,pipVal:10,cs:100000,unit:"units"},
+  {id:"USDJPY",label:"USD/JPY",cat:"Forex",pipSize:0.01,pipVal:6.67,cs:100000,unit:"units"},
+  {id:"USDCAD",label:"USD/CAD",cat:"Forex",pipSize:0.0001,pipVal:7.2,cs:100000,unit:"units"},
+  {id:"USDCHF",label:"USD/CHF",cat:"Forex",pipSize:0.0001,pipVal:11.2,cs:100000,unit:"units"},
+  {id:"EURJPY",label:"EUR/JPY",cat:"Forex",pipSize:0.01,pipVal:6.67,cs:100000,unit:"units"},
+  {id:"GBPJPY",label:"GBP/JPY",cat:"Forex",pipSize:0.01,pipVal:6.67,cs:100000,unit:"units"},
+  {id:"AUDJPY",label:"AUD/JPY",cat:"Forex",pipSize:0.01,pipVal:6.67,cs:100000,unit:"units"},
+  {id:"NZDJPY",label:"NZD/JPY",cat:"Forex",pipSize:0.01,pipVal:6.67,cs:100000,unit:"units"},
+  {id:"CADJPY",label:"CAD/JPY",cat:"Forex",pipSize:0.01,pipVal:6.67,cs:100000,unit:"units"},
+  {id:"CHFJPY",label:"CHF/JPY",cat:"Forex",pipSize:0.01,pipVal:6.67,cs:100000,unit:"units"},
+  {id:"EURGBP",label:"EUR/GBP",cat:"Forex",pipSize:0.0001,pipVal:12.5,cs:100000,unit:"units"},
+  {id:"GBPAUD",label:"GBP/AUD",cat:"Forex",pipSize:0.0001,pipVal:6.5,cs:100000,unit:"units"},
+  {id:"GBPNZD",label:"GBP/NZD",cat:"Forex",pipSize:0.0001,pipVal:6.0,cs:100000,unit:"units"},
+  {id:"GBPCAD",label:"GBP/CAD",cat:"Forex",pipSize:0.0001,pipVal:7.2,cs:100000,unit:"units"},
+  {id:"GBPCHF",label:"GBP/CHF",cat:"Forex",pipSize:0.0001,pipVal:11.2,cs:100000,unit:"units"},
+  {id:"EURAUD",label:"EUR/AUD",cat:"Forex",pipSize:0.0001,pipVal:6.5,cs:100000,unit:"units"},
+  {id:"EURNZD",label:"EUR/NZD",cat:"Forex",pipSize:0.0001,pipVal:6.0,cs:100000,unit:"units"},
+  {id:"EURCAD",label:"EUR/CAD",cat:"Forex",pipSize:0.0001,pipVal:7.2,cs:100000,unit:"units"},
+  {id:"EURCHF",label:"EUR/CHF",cat:"Forex",pipSize:0.0001,pipVal:11.2,cs:100000,unit:"units"},
+  {id:"AUDNZD",label:"AUD/NZD",cat:"Forex",pipSize:0.0001,pipVal:6.0,cs:100000,unit:"units"},
+  {id:"AUDCAD",label:"AUD/CAD",cat:"Forex",pipSize:0.0001,pipVal:7.2,cs:100000,unit:"units"},
+  {id:"AUDCHF",label:"AUD/CHF",cat:"Forex",pipSize:0.0001,pipVal:11.2,cs:100000,unit:"units"},
+  {id:"NZDCAD",label:"NZD/CAD",cat:"Forex",pipSize:0.0001,pipVal:7.2,cs:100000,unit:"units"},
+  {id:"NZDCHF",label:"NZD/CHF",cat:"Forex",pipSize:0.0001,pipVal:11.2,cs:100000,unit:"units"},
+  {id:"CADCHF",label:"CAD/CHF",cat:"Forex",pipSize:0.0001,pipVal:11.2,cs:100000,unit:"units"},
+  {id:"USDSGD",label:"USD/SGD",cat:"Forex",pipSize:0.0001,pipVal:7.5,cs:100000,unit:"units"},
+  {id:"USDSEK",label:"USD/SEK",cat:"Forex",pipSize:0.0001,pipVal:0.95,cs:100000,unit:"units"},
+  {id:"USDNOK",label:"USD/NOK",cat:"Forex",pipSize:0.0001,pipVal:0.93,cs:100000,unit:"units"},
+  {id:"USDMXN",label:"USD/MXN",cat:"Forex",pipSize:0.0001,pipVal:0.58,cs:100000,unit:"units"},
+  {id:"USDZAR",label:"USD/ZAR",cat:"Forex",pipSize:0.0001,pipVal:0.55,cs:100000,unit:"units"},
+  {id:"USDTRY",label:"USD/TRY",cat:"Forex",pipSize:0.0001,pipVal:0.31,cs:100000,unit:"units"},
+  {id:"USDCNH",label:"USD/CNH",cat:"Forex",pipSize:0.0001,pipVal:1.38,cs:100000,unit:"units"},
+  {id:"XAUUSD",label:"XAU/USD (Gold)",cat:"Metals",pipSize:0.01,pipVal:1,cs:100,unit:"oz"},
+  {id:"XAGUSD",label:"XAG/USD (Silver)",cat:"Metals",pipSize:0.001,pipVal:5,cs:5000,unit:"oz"},
+  {id:"XPTUSD",label:"XPT/USD (Platinum)",cat:"Metals",pipSize:0.01,pipVal:1,cs:100,unit:"oz"},
+  {id:"XPDUSD",label:"XPD/USD (Palladium)",cat:"Metals",pipSize:0.01,pipVal:1,cs:100,unit:"oz"},
+  {id:"WTI",label:"WTI Crude Oil",cat:"Energy",pipSize:0.01,pipVal:10,cs:1000,unit:"bbl"},
+  {id:"BRENT",label:"Brent Crude Oil",cat:"Energy",pipSize:0.01,pipVal:10,cs:1000,unit:"bbl"},
+  {id:"NATGAS",label:"Natural Gas",cat:"Energy",pipSize:0.001,pipVal:10,cs:10000,unit:"mmBtu"},
+  {id:"US30",label:"US30 (Dow Jones)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"NAS100",label:"NAS100 (Nasdaq)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"SPX500",label:"SPX500 (S&P 500)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"US2000",label:"US2000 (Russell)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"GER40",label:"GER40 (DAX)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"UK100",label:"UK100 (FTSE)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"FRA40",label:"FRA40 (CAC 40)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"JPN225",label:"JPN225 (Nikkei)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"AUS200",label:"AUS200 (ASX 200)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"HK50",label:"HK50 (Hang Seng)",cat:"Indices",pipSize:1,pipVal:1,cs:1,unit:"contracts"},
+  {id:"BTCUSD",label:"BTC/USD (Bitcoin)",cat:"Crypto",pipSize:0.01,pipVal:1,cs:1,unit:"BTC"},
+  {id:"ETHUSD",label:"ETH/USD (Ethereum)",cat:"Crypto",pipSize:0.01,pipVal:1,cs:1,unit:"ETH"},
+  {id:"SOLUSD",label:"SOL/USD (Solana)",cat:"Crypto",pipSize:0.01,pipVal:1,cs:1,unit:"SOL"},
+];
+
 function PositionCalc() {
-  const [acct, setAcct] = useState(10000);
-  const [riskPct, setRiskPct] = useState(1);
-  const [sl, setSl] = useState(50);
-  const [pair, setPair] = useState("EUR/USD");
+  const [selected, setSelected] = useState(INSTRUMENTS.find(i => i.id === "XAUUSD"));
+  const [search, setSearch] = useState("XAU/USD (Gold)");
+  const [dropOpen, setDropOpen] = useState(false);
+  const [entry, setEntry] = useState("");
+  const [sl, setSl] = useState("");
+  const [risk, setRisk] = useState("");
+  const wrapRef = useRef(null);
 
-  const pipValues = { "EUR/USD":10,"GBP/USD":10,"USD/JPY":6.67,"USD/CHF":10.58,"AUD/USD":10,"NZD/USD":10,"USD/CAD":7.24,"EUR/GBP":12.66,"EUR/JPY":6.67,"EUR/CHF":10.58,"EUR/AUD":6.49,"EUR/NZD":5.88,"EUR/CAD":7.24,"GBP/JPY":6.67,"GBP/CHF":10.58,"GBP/AUD":6.49,"GBP/NZD":5.88,"GBP/CAD":7.24,"AUD/JPY":6.67,"AUD/CHF":10.58,"AUD/NZD":5.88,"AUD/CAD":7.24,"NZD/JPY":6.67,"NZD/CHF":10.58,"NZD/CAD":7.24,"CAD/JPY":6.67,"CAD/CHF":10.58,"CHF/JPY":6.67,"XAU/USD":10,"XAG/USD":50,"US30":10,"NAS100":10,"SPX500":10,"GER40":10.58 };
+  useEffect(() => {
+    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setDropOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
-  const riskUsd = acct * (riskPct / 100);
-  const pv = pipValues[pair] || 10;
-  const lots = sl > 0 ? riskUsd / (sl * pv) : 0;
+  const filteredInst = useMemo(() => {
+    if (!dropOpen) return INSTRUMENTS;
+    const q = search.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!q) return INSTRUMENTS;
+    return INSTRUMENTS.filter(i => i.id.toLowerCase().includes(q) || i.label.toLowerCase().replace(/[^a-z0-9]/g, "").includes(q) || i.cat.toLowerCase().includes(q));
+  }, [search, dropOpen]);
+
+  const e = parseFloat(entry), s = parseFloat(sl), r = parseFloat(risk);
+  const valid = selected && !isNaN(e) && !isNaN(s) && !isNaN(r) && e !== s && r > 0;
+  const isLong = valid ? e > s : true;
+  const slDist = valid ? Math.abs(e - s) : 0;
+  const slPct = valid ? (slDist / e) * 100 : 0;
+  const slPips = valid ? slDist / selected.pipSize : 0;
+  const lots = valid ? r / (slPips * selected.pipVal) : 0;
+  const units = lots * (selected?.cs || 1);
+  const posValue = units * (e || 0);
+  const fmtN = (n, d = 2) => isNaN(n) ? "—" : n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  const catColor = { Forex: T.accent, Metals: T.amber, Energy: T.green, Indices: T.blue, Crypto: T.purple };
 
   return (
-    <div style={{ maxWidth: 500, margin: "0 auto", padding: "40px 20px" }}>
-      <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 24, color: T.text }}>Position Size Calculator</h2>
-      <div style={{ ...cardS, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-        <Field label="Account Size ($)"><input type="number" value={acct} onChange={e => setAcct(parseFloat(e.target.value) || 0)} style={inputS} /></Field>
-        <Field label="Risk %"><input type="number" step="0.25" value={riskPct} onChange={e => setRiskPct(parseFloat(e.target.value) || 0)} style={inputS} /></Field>
-        <Field label="Pair"><select value={pair} onChange={e => setPair(e.target.value)} style={selectS}>{PAIRS.map(p => <option key={p}>{p}</option>)}</select></Field>
-        <Field label="Stop Loss (pips)"><input type="number" value={sl} onChange={e => setSl(parseFloat(e.target.value) || 0)} style={inputS} /></Field>
-        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: T.textMid, fontSize: 13 }}>Risk Amount</span>
-            <span style={{ fontFamily: mono, fontWeight: 600, color: T.accent, fontSize: 15 }}>${riskUsd.toFixed(2)}</span>
+    <div style={{ maxWidth: 480, margin: "0 auto", padding: "36px 20px" }}>
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
+        <h2 style={{ fontSize: 28, fontWeight: 700, color: T.text, fontFamily: "'Instrument Serif', Georgia, serif" }}>Position Sizer</h2>
+        <div style={{ fontSize: 11, letterSpacing: 2, color: T.textLight, textTransform: "uppercase", fontFamily: mono, marginTop: 4 }}>{INSTRUMENTS.length} instruments · Risk → Lots</div>
+      </div>
+
+      <div style={{ ...cardS, padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Searchable Dropdown */}
+        <div ref={wrapRef} style={{ position: "relative" }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Instrument</label>
+          <div style={{ display: "flex", alignItems: "center", background: T.cardAlt, border: `1px solid ${T.border}`, borderRadius: dropOpen ? "10px 10px 0 0" : 10, padding: "0 12px" }}>
+            <input type="text" value={dropOpen ? search : (selected?.label || "")} placeholder="Search... e.g. GBP, Gold, NAS"
+              onFocus={() => { setDropOpen(true); setSearch(""); }}
+              onChange={e => setSearch(e.target.value)}
+              style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: T.text, fontFamily: mono, fontSize: 15, padding: "12px 0", width: "100%" }} />
+            <span style={{ color: T.textLight, fontSize: 10, transition: "transform 0.2s", transform: dropOpen ? "rotate(180deg)" : "none" }}>▼</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: T.textMid, fontSize: 13 }}>Pip Value ({pair})</span>
-            <span style={{ fontFamily: mono, fontSize: 13 }}>${pv.toFixed(2)}</span>
+          {dropOpen && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: T.card, border: `1px solid ${T.border}`, borderTop: "none", borderRadius: "0 0 10px 10px", maxHeight: 240, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.08)" }}>
+              {filteredInst.length === 0 ? (
+                <div style={{ padding: "12px 14px", color: T.textLight, fontSize: 13 }}>No results</div>
+              ) : filteredInst.map(inst => (
+                <div key={inst.id} onMouseDown={(ev) => { ev.preventDefault(); setSelected(inst); setSearch(inst.label); setDropOpen(false); }}
+                  style={{ padding: "10px 14px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: selected?.id === inst.id ? T.cardAlt : "transparent", transition: "background 0.15s" }}
+                  onMouseEnter={ev => ev.currentTarget.style.background = T.cardAlt} onMouseLeave={ev => ev.currentTarget.style.background = selected?.id === inst.id ? T.cardAlt : "transparent"}>
+                  <span style={{ fontFamily: mono, fontSize: 13, color: T.text }}>{inst.label}</span>
+                  <span style={{ fontSize: 10, color: catColor[inst.cat] || T.textLight, fontFamily: mono, letterSpacing: 0.5 }}>{inst.cat}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Entry Price</label>
+          <div style={{ display: "flex", alignItems: "center", background: T.cardAlt, border: `1px solid ${T.border}`, borderRadius: 10, padding: "0 12px" }}>
+            <input type="number" inputMode="decimal" value={entry} onChange={e => setEntry(e.target.value)} placeholder="0" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: T.text, fontFamily: mono, fontSize: 15, padding: "12px 0", width: "100%" }} />
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
-            <span style={{ fontWeight: 700, fontSize: 15 }}>Lot Size</span>
-            <span style={{ fontFamily: mono, fontWeight: 700, color: T.green, fontSize: 22 }}>{lots.toFixed(2)}</span>
+        </div>
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Stop Loss</label>
+          <div style={{ display: "flex", alignItems: "center", background: T.cardAlt, border: `1px solid ${T.border}`, borderRadius: 10, padding: "0 12px" }}>
+            <input type="number" inputMode="decimal" value={sl} onChange={e => setSl(e.target.value)} placeholder="0" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: T.text, fontFamily: mono, fontSize: 15, padding: "12px 0", width: "100%" }} />
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: T.textMid, fontSize: 12 }}>Mini Lots</span>
-            <span style={{ fontFamily: mono, fontSize: 13 }}>{(lots * 10).toFixed(1)}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: T.textMid, fontSize: 12 }}>Micro Lots</span>
-            <span style={{ fontFamily: mono, fontSize: 13 }}>{(lots * 100).toFixed(0)}</span>
+        </div>
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Risk Amount</label>
+          <div style={{ display: "flex", alignItems: "center", background: T.cardAlt, border: `1px solid ${T.border}`, borderRadius: 10, padding: "0 12px" }}>
+            <span style={{ fontFamily: mono, fontSize: 14, color: T.textLight, marginRight: 4 }}>$</span>
+            <input type="number" inputMode="decimal" value={risk} onChange={e => setRisk(e.target.value)} placeholder="0" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: T.text, fontFamily: mono, fontSize: 15, padding: "12px 0", width: "100%" }} />
           </div>
         </div>
       </div>
+
+      {/* Results */}
+      {valid && (
+        <div style={{ ...cardS, padding: 22, marginTop: 16 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+            <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, background: isLong ? T.greenBg : T.redBg, color: isLong ? T.green : T.red }}>{isLong ? "LONG" : "SHORT"}</span>
+          </div>
+          <div style={{ textAlign: "center", padding: "8px 0 18px", borderBottom: `1px solid ${T.border}` }}>
+            <div style={{ fontSize: 12, color: T.textLight, marginBottom: 6 }}>Lot Size</div>
+            <div style={{ fontFamily: mono, fontSize: 40, fontWeight: 700, color: T.text }}>{fmtN(lots, lots < 0.1 ? 3 : 2)}</div>
+            <div style={{ fontFamily: mono, fontSize: 12, color: T.accent, marginTop: 5 }}>{fmtN(units, units < 10 ? 4 : 0)} {selected.unit} · ${fmtN(posValue)} notional</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
+            <div style={{ background: T.cardAlt, borderRadius: 10, padding: "11px 13px" }}>
+              <div style={{ fontSize: 11, color: T.textLight, marginBottom: 3 }}>SL Pips</div>
+              <div style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: T.red }}>{fmtN(slPips, 1)}</div>
+            </div>
+            <div style={{ background: T.cardAlt, borderRadius: 10, padding: "11px 13px" }}>
+              <div style={{ fontSize: 11, color: T.textLight, marginBottom: 3 }}>SL %</div>
+              <div style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: T.red }}>{fmtN(slPct)}%</div>
+            </div>
+            <div style={{ background: T.cardAlt, borderRadius: 10, padding: "11px 13px" }}>
+              <div style={{ fontSize: 11, color: T.textLight, marginBottom: 3 }}>$ at Risk</div>
+              <div style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: T.accent }}>${fmtN(r)}</div>
+            </div>
+            <div style={{ background: T.cardAlt, borderRadius: 10, padding: "11px 13px" }}>
+              <div style={{ fontSize: 11, color: T.textLight, marginBottom: 3 }}>Pip Value</div>
+              <div style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, color: T.textMid }}>${selected.pipVal}/lot</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ textAlign: "center", marginTop: 14, fontSize: 10, color: T.textLight, fontFamily: mono }}>Pip values approximate for cross pairs. Verify with broker.</div>
     </div>
   );
 }
@@ -583,7 +721,7 @@ export default function App() {
 
   return (
     <div style={{ background: T.bg, minHeight: "100vh", fontFamily: font, color: T.text }}>
-      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
       {/* Top Nav */}
       <div style={{ background: T.headerBg, padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -608,3 +746,4 @@ export default function App() {
     </div>
   );
 }
+
