@@ -507,6 +507,7 @@ function RecapTab({ user, accounts, activeAccount }) {
   const [justSaved, setJustSaved] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [expandedTrades, setExpandedTrades] = useState({});
+  const [neighborCounts, setNeighborCounts] = useState({ prev: null, next: null });
 
   const { periodStart, periodEnd, periodLabel } = useMemo(() => {
     const s = periodType === "week" ? startOfWeek(periodDate) : startOfMonth(periodDate);
@@ -618,6 +619,45 @@ function RecapTab({ user, accounts, activeAccount }) {
   const expandAll = () => { const all = {}; tradesWithNotes.forEach(t => { all[t.id] = true; }); setExpandedTrades(all); };
   const collapseAll = () => setExpandedTrades({});
 
+  // Compute prev/next period boundaries and fetch trade counts for them
+  useEffect(() => {
+    const computeBoundaries = (offsetUnits) => {
+      const d = new Date(periodDate.getFullYear(), periodDate.getMonth(), periodDate.getDate(), 12, 0, 0, 0);
+      if (periodType === "week") d.setDate(d.getDate() + offsetUnits * 7);
+      else d.setMonth(d.getMonth() + offsetUnits);
+      const s = periodType === "week" ? startOfWeek(d) : startOfMonth(d);
+      const e = periodType === "week" ? endOfWeek(d) : endOfMonth(d);
+      return { start: isoDate(s), end: isoDate(e) };
+    };
+    const fetchCount = async (range) => {
+      let q = supabase.from("trades").select("id", { count: "exact", head: true }).gte("date", range.start).lte("date", range.end);
+      if (effectiveAccountId) q = q.eq("account_id", effectiveAccountId);
+      else q = q.eq("user_id", user.id);
+      const { count } = await q;
+      return count || 0;
+    };
+    const load = async () => {
+      const prev = computeBoundaries(-1);
+      const next = computeBoundaries(1);
+      const [pc, nc] = await Promise.all([fetchCount(prev), fetchCount(next)]);
+      setNeighborCounts({ prev: pc, next: nc });
+    };
+    load();
+  }, [periodStart, periodEnd, periodType, effectiveAccountId, user.id]);
+
+  // Jump helpers: This Week / Last Week / This Month / Last Month
+  const jumpToCurrent = () => setPeriodDate(new Date());
+  const jumpToPrevious = () => {
+    const d = new Date();
+    if (periodType === "week") d.setDate(d.getDate() - 7);
+    else d.setMonth(d.getMonth() - 1);
+    setPeriodDate(d);
+  };
+
+  // Determine if currently viewing the "current" period (this week or this month)
+  const todayISO = isoDate(new Date());
+  const isViewingCurrent = todayISO >= periodStart && todayISO <= periodEnd;
+
   const saveRecap = async () => {
     setSaving(true);
     const payload = {
@@ -674,7 +714,10 @@ function RecapTab({ user, accounts, activeAccount }) {
             <button onClick={() => shiftPeriod(-1)} style={{ ...btnG, padding: "6px 12px" }}>← Prev</button>
             <div style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, padding: "0 12px", minWidth: 220, textAlign: "center" }}>{periodLabel}</div>
             <button onClick={() => shiftPeriod(1)} style={{ ...btnG, padding: "6px 12px" }}>Next →</button>
-            <button onClick={() => setPeriodDate(new Date())} style={{ ...btnG, padding: "6px 12px", fontSize: 10, color: T.accent }}>Today</button>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={jumpToPrevious} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: T.textMid }}>← {periodType === "week" ? "Last Week" : "Last Month"}</button>
+            <button onClick={jumpToCurrent} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: isViewingCurrent ? T.textLight : T.accent, borderColor: isViewingCurrent ? T.border : T.accent + "60", fontWeight: 600 }}>{periodType === "week" ? "This Week" : "This Month"}</button>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
             <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, letterSpacing: 1 }}>SCOPE:</span>
@@ -684,6 +727,22 @@ function RecapTab({ user, accounts, activeAccount }) {
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
+        </div>
+        {/* Trade count status row — shows where the trades are */}
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.borderLight}`, display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", fontSize: 11, fontFamily: mono, color: T.textMid }}>
+          <span style={{ color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontSize: 9 }}>Trade Counts:</span>
+          <button onClick={() => shiftPeriod(-1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: T.textMid, fontFamily: mono, fontSize: 11 }}>
+            ← Previous: <span style={{ color: neighborCounts.prev > 0 ? T.text : T.textLight, fontWeight: 600 }}>{neighborCounts.prev == null ? "…" : `${neighborCounts.prev} trade${neighborCounts.prev === 1 ? "" : "s"}`}</span>
+          </button>
+          <span>·</span>
+          <span>
+            Viewing: <span style={{ color: periodTrades.length > 0 ? T.accent : T.textLight, fontWeight: 700 }}>{periodTrades.length} trade{periodTrades.length === 1 ? "" : "s"}</span>
+            {isViewingCurrent && <span style={{ color: T.green, marginLeft: 6, fontWeight: 600 }}>· this {periodType === "week" ? "week" : "month"}</span>}
+          </span>
+          <span>·</span>
+          <button onClick={() => shiftPeriod(1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: T.textMid, fontFamily: mono, fontSize: 11 }}>
+            Next: <span style={{ color: neighborCounts.next > 0 ? T.text : T.textLight, fontWeight: 600 }}>{neighborCounts.next == null ? "…" : `${neighborCounts.next} trade${neighborCounts.next === 1 ? "" : "s"}`}</span> →
+          </button>
         </div>
       </div>
 
