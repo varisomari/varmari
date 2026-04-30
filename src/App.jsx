@@ -63,25 +63,50 @@ const realizedR = (t) => {
   return pnl / risk;
 };
 
-// Date helpers for periods (Monday-start week)
-const isoDate = d => d.toISOString().split("T")[0];
+// Date helpers — operate strictly in LOCAL time to avoid UTC drift.
+// Critical: never use toISOString() on a Date because that converts to UTC,
+// which can shift the date by 1 in non-UTC timezones (e.g. Dubai is UTC+4 → late evening flips a day).
+const pad2 = n => String(n).padStart(2, "0");
+const isoDate = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+// Parse a "YYYY-MM-DD" date string into a Date object at LOCAL noon (avoids DST/timezone edge cases).
+const parseLocalDate = (s) => {
+  if (s instanceof Date) return new Date(s.getFullYear(), s.getMonth(), s.getDate(), 12, 0, 0, 0);
+  if (typeof s !== "string") return new Date();
+  const parts = s.split("-");
+  if (parts.length !== 3) return new Date(s);
+  return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0, 0);
+};
+
 const startOfWeek = (date) => {
-  const d = new Date(date);
-  const day = d.getDay();
+  // Take the date, set it to local noon, then walk back to the Monday of that week.
+  const d = (date instanceof Date) ? new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0) : parseLocalDate(date);
+  const day = d.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
   const diff = (day === 0 ? -6 : 1 - day);
   d.setDate(d.getDate() + diff);
-  d.setHours(0,0,0,0);
   return d;
 };
-const endOfWeek = (date) => { const s = startOfWeek(date); const e = new Date(s); e.setDate(s.getDate() + 6); return e; };
-const startOfMonth = (date) => { const d = new Date(date); d.setDate(1); d.setHours(0,0,0,0); return d; };
-const endOfMonth = (date) => { const d = new Date(date); d.setMonth(d.getMonth() + 1, 0); return d; };
+const endOfWeek = (date) => {
+  const s = startOfWeek(date);
+  const e = new Date(s.getFullYear(), s.getMonth(), s.getDate() + 6, 12, 0, 0, 0);
+  return e;
+};
+const startOfMonth = (date) => {
+  const d = (date instanceof Date) ? date : parseLocalDate(date);
+  return new Date(d.getFullYear(), d.getMonth(), 1, 12, 0, 0, 0);
+};
+const endOfMonth = (date) => {
+  const d = (date instanceof Date) ? date : parseLocalDate(date);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 12, 0, 0, 0);
+};
 const formatPeriodLabel = (type, startISO) => {
-  const d = new Date(startISO + "T12:00:00");
+  const d = parseLocalDate(startISO);
   if (type === "week") {
-    const e = endOfWeek(d);
-    const sM = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-    const eM = e.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    // Re-derive Monday and Sunday from the saved start date in case it drifted before.
+    const monday = startOfWeek(d);
+    const sunday = endOfWeek(d);
+    const sM = monday.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const eM = sunday.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     return `Week of ${sM} – ${eM}`;
   }
   return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
@@ -479,6 +504,7 @@ function RecapTab({ user, accounts, activeAccount }) {
   const [pastRecaps, setPastRecaps] = useState([]);
   const [scope, setScope] = useState("active"); // "active" | "all" | account.id
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [expandedTrades, setExpandedTrades] = useState({});
 
@@ -617,10 +643,12 @@ function RecapTab({ user, accounts, activeAccount }) {
     if (result.error) { alert("Save failed: " + result.error.message); return; }
     setRecapId(result.data.id);
     setSavedAt(result.data.updated_at || result.data.created_at);
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 2000);
   };
 
   const shiftPeriod = (dir) => {
-    const d = new Date(periodDate);
+    const d = new Date(periodDate.getFullYear(), periodDate.getMonth(), periodDate.getDate(), 12, 0, 0, 0);
     if (periodType === "week") d.setDate(d.getDate() + dir * 7);
     else d.setMonth(d.getMonth() + dir);
     setPeriodDate(d);
@@ -628,7 +656,7 @@ function RecapTab({ user, accounts, activeAccount }) {
 
   const jumpTo = (recapRow) => {
     setPeriodType(recapRow.period_type);
-    setPeriodDate(new Date(recapRow.period_start + "T12:00:00"));
+    setPeriodDate(parseLocalDate(recapRow.period_start));
   };
 
   const scopeLabel = scope === "all" ? "All Accounts" : (scope === "active" ? `${activeAccount?.name || "—"}` : (accounts.find(a => a.id === scope)?.name || "—"));
@@ -670,7 +698,6 @@ function RecapTab({ user, accounts, activeAccount }) {
             <Stat label="Win Rate" value={`${periodStats.wr.toFixed(1)}%`} color={periodStats.wr >= 50 ? T.green : T.red} />
             <Stat label="Total PnL %" value={fP(periodStats.tPnl)} color={cP(periodStats.tPnl)} />
             <Stat label="Total PnL $" value={fU(periodStats.tUsd)} color={cP(periodStats.tUsd)} />
-            <Stat label="Total R" value={(periodStats.totalR >= 0 ? "+" : "") + periodStats.totalR.toFixed(2) + "R"} color={cP(periodStats.totalR)} />
             <Stat label="Best Trade" value={periodStats.best != null ? fP(periodStats.best) : "—"} color={T.green} />
             <Stat label="Worst Trade" value={periodStats.worst != null ? fP(periodStats.worst) : "—"} color={T.red} />
             <Stat label="Most Traded" value={periodStats.topPair ? periodStats.topPair[0] : "—"} sub={periodStats.topPair ? `${periodStats.topPair[1]} trades` : ""} />
@@ -793,7 +820,7 @@ function RecapTab({ user, accounts, activeAccount }) {
           <span style={{ fontSize: 15, fontWeight: 700 }}>Reflection</span>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {savedAt && <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Saved {new Date(savedAt).toLocaleString()}</span>}
-            <button onClick={saveRecap} disabled={saving} style={{ ...btnP, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : (recapId ? "Update Recap" : "Save Recap")}</button>
+            <button onClick={saveRecap} disabled={saving} style={{ ...btnP, opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>{saving ? "Saving..." : justSaved ? "✓ Saved" : (recapId ? "Update Recap" : "Save Recap")}</button>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
@@ -1287,12 +1314,11 @@ function Journal({ user, onLogout }) {
                     <Stat icon="◆" label="Balance" value={`$${(S.base + S.tUsd).toFixed(0)}`} color={T.accent} sub={`Streak: ${S.maxS}`} />
                   </div>
 
-                  {/* Risk row (NEW) */}
+                  {/* Risk row */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 10 }}>
                     <Stat icon="▼" label="Max Drawdown" value={fU(-S.maxDD)} color={T.red} sub={`${S.maxDDpct.toFixed(1)}% from peak`} />
                     <Stat icon="◊" label="Current DD" value={S.currentDD > 0.01 ? fU(-S.currentDD) : "—"} color={S.currentDD > 0.01 ? T.red : T.green} sub={S.currentDD > 0.01 ? `${S.currentDDpct.toFixed(1)}% off peak` : "At peak"} />
                     <Stat icon="◷" label="Days Since Peak" value={S.daysSincePeak} sub={S.daysSincePeak === 0 ? "New peak today" : "days"} />
-                    <Stat icon="R" label="Total R" value={(S.totalR >= 0 ? "+" : "") + S.totalR.toFixed(2) + "R"} color={cP(S.totalR)} sub={S.avgRealizedR != null ? `Avg ${S.avgRealizedR.toFixed(2)}R/trade` : "—"} />
                     <Stat icon="≈" label="Avg Intended RR" value={S.avgIntendedR != null ? `1:${S.avgIntendedR.toFixed(2)}` : "—"} sub={S.avgRealizedR != null ? `Realized ${S.avgRealizedR >= 0 ? "+" : ""}${S.avgRealizedR.toFixed(2)}R` : "—"} />
                   </div>
 
@@ -1315,48 +1341,7 @@ function Journal({ user, onLogout }) {
                     </ResponsiveContainer>
                   </div>
 
-                  {/* Cumulative R + R Distribution (NEW) */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 12 }}>
-                    <div style={{ ...cardS, padding: 18 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Cumulative R</span>
-                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Skill measure (size-agnostic)</span>
-                      </div>
-                      {S.rCurve.length >= 2 ? (
-                        <ResponsiveContainer width="100%" height={180}>
-                          <LineChart data={S.rCurve}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                            <XAxis dataKey="date" tick={{ fontSize: 9, fill: T.textLight, fontFamily: mono }} tickLine={false} axisLine={{ stroke: T.border }} />
-                            <YAxis tick={{ fontSize: 9, fill: T.textLight, fontFamily: mono }} tickLine={false} axisLine={false} tickFormatter={v => `${v}R`} />
-                            <Tooltip contentStyle={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, fontFamily: mono, fontSize: 11 }} formatter={v => [`${v}R`, "Cumulative"]} />
-                            <ReferenceLine y={0} stroke={T.textLight} strokeDasharray="4 4" />
-                            <Line type="monotone" dataKey="r" stroke={S.totalR >= 0 ? T.green : T.red} strokeWidth={2} dot={false} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      ) : <div style={{ color: T.textLight, fontSize: 12, textAlign: "center", padding: 30 }}>Need trades with Risk% and PnL% to plot</div>}
-                    </div>
-                    <div style={{ ...cardS, padding: 18 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>R Distribution</span>
-                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Realized R per trade</span>
-                      </div>
-                      {S.buckets.some(b => b.count > 0) ? (
-                        <ResponsiveContainer width="100%" height={180}>
-                          <BarChart data={S.buckets}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                            <XAxis dataKey="label" tick={{ fontSize: 9, fill: T.textLight, fontFamily: mono }} tickLine={false} axisLine={false} />
-                            <YAxis tick={{ fontSize: 9, fill: T.textLight, fontFamily: mono }} tickLine={false} axisLine={false} allowDecimals={false} />
-                            <Tooltip contentStyle={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, fontFamily: mono, fontSize: 11 }} />
-                            <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                              {S.buckets.map((b, i) => <Cell key={i} fill={b.max <= 0 ? T.red : T.green} opacity={0.75} />)}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : <div style={{ color: T.textLight, fontSize: 12, textAlign: "center", padding: 30 }}>Need trades with Risk% and PnL% to plot</div>}
-                    </div>
-                  </div>
-
-                  {/* Performance by Rating (NEW) */}
+                  {/* Performance by Rating */}
                   <div style={{ ...cardS, padding: 18 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                       <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Performance by Rating</span>
@@ -1365,14 +1350,13 @@ function Journal({ user, onLogout }) {
                     <div style={{ overflowX: "auto" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono }}>
                         <thead><tr style={{ background: T.cardAlt }}>
-                          {["Rating", "Trades", "W", "L", "WR%", "Total PnL%", "Avg PnL%", "Avg R"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>{h}</th>)}
+                          {["Rating", "Trades", "W", "L", "WR%", "Total PnL%", "Avg PnL%"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>{h}</th>)}
                         </tr></thead>
                         <tbody>
                           {[5,4,3,2,1].map((r, i) => {
                             const br = S.byRating[r];
                             const wr = (br.w + br.l) > 0 ? (br.w / (br.w + br.l)) * 100 : 0;
                             const avgPnl = br.n > 0 ? br.pnl / br.n : 0;
-                            const avgR = br.rCount > 0 ? br.sumR / br.rCount : null;
                             return (
                               <tr key={r} style={{ background: i % 2 === 0 ? T.card : T.cardAlt, opacity: br.n === 0 ? 0.4 : 1 }}>
                                 <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.amber }}>{"★".repeat(r)}</td>
@@ -1382,7 +1366,6 @@ function Journal({ user, onLogout }) {
                                 <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: br.n > 0 && wr >= 50 ? T.green : br.n > 0 ? T.red : T.textLight, fontWeight: 600 }}>{br.n > 0 ? `${wr.toFixed(0)}%` : "—"}</td>
                                 <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(br.pnl), fontWeight: 600 }}>{br.n > 0 ? fP(br.pnl) : "—"}</td>
                                 <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(avgPnl) }}>{br.n > 0 ? fP(avgPnl) : "—"}</td>
-                                <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: avgR != null ? cP(avgR) : T.textLight }}>{avgR != null ? `${avgR >= 0 ? "+" : ""}${avgR.toFixed(2)}R` : "—"}</td>
                               </tr>
                             );
                           })}
@@ -1404,8 +1387,8 @@ function Journal({ user, onLogout }) {
                       </div>
                     ) : (<>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
-                        <Stat icon="↗" label="Avg MFE" value={`${S.exitQuality.avgMFE >= 0 ? "+" : ""}${S.exitQuality.avgMFE.toFixed(2)}R`} color={T.green} sub="Peak in your favor" />
-                        <Stat icon="✓" label="Avg Realized" value={`${S.exitQuality.avgRealized >= 0 ? "+" : ""}${S.exitQuality.avgRealized.toFixed(2)}R`} color={cP(S.exitQuality.avgRealized)} sub="Where you exited" />
+                        <Stat icon="↗" label="Avg Win Peak" value={`${S.exitQuality.avgMFE >= 0 ? "+" : ""}${S.exitQuality.avgMFE.toFixed(2)}R`} color={T.green} sub="How far wins go" />
+                        <Stat icon="✓" label="Avg Win Exit" value={`${S.exitQuality.avgRealized >= 0 ? "+" : ""}${S.exitQuality.avgRealized.toFixed(2)}R`} color={cP(S.exitQuality.avgRealized)} sub="Where you closed" />
                         <Stat icon="%" label="Capture Rate" value={S.exitQuality.captureRate != null ? `${S.exitQuality.captureRate.toFixed(0)}%` : "—"} color={S.exitQuality.captureRate != null && S.exitQuality.captureRate >= 60 ? T.green : S.exitQuality.captureRate != null && S.exitQuality.captureRate >= 40 ? T.amber : T.red} sub="of available move" />
                         <Stat icon="✕" label="Left on Table" value={`-${S.exitQuality.totalLeftOnTable.toFixed(2)}R`} color={T.red} sub="total across trades" />
                         <Stat icon="◧" label="Coverage" value={`${S.exitQuality.coverage.toFixed(0)}%`} sub={`${S.exitQuality.n} of ${S.w} wins logged`} />
