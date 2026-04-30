@@ -555,8 +555,8 @@ function RecapTab({ user, accounts, activeAccount }) {
     periodTrades.forEach(t => { if (t.pair) pairCounts[t.pair] = (pairCounts[t.pair] || 0) + 1; });
     const topPair = Object.entries(pairCounts).sort((a, b) => b[1] - a[1])[0];
 
-    // Period MFE / Exit Quality
-    const mfePairs = periodTrades.map(t => {
+    // Period MFE / Exit Quality — winners only
+    const mfePairs = periodTrades.filter(t => t.result === "Win").map(t => {
       const mfe = parseRR(t.max_r);
       const real = realizedR(t);
       if (mfe == null || real == null) return null;
@@ -565,10 +565,9 @@ function RecapTab({ user, accounts, activeAccount }) {
     let totalLeftOnTable = null, captureRate = null, mfeCount = mfePairs.length;
     if (mfeCount > 0) {
       totalLeftOnTable = mfePairs.reduce((s, x) => s + x.left, 0);
-      const positive = mfePairs.filter(x => x.mfe > 0);
-      if (positive.length > 0) {
-        captureRate = (positive.reduce((s, x) => s + Math.max(0, x.real), 0) / positive.reduce((s, x) => s + x.mfe, 0)) * 100;
-      }
+      const totalMFE = mfePairs.reduce((s, x) => s + x.mfe, 0);
+      const totalReal = mfePairs.reduce((s, x) => s + x.real, 0);
+      if (totalMFE > 0) captureRate = (totalReal / totalMFE) * 100;
     }
 
     return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, best: isFinite(best) ? best : null, worst: isFinite(worst) ? worst : null, totalR, topPair, totalLeftOnTable, captureRate, mfeCount };
@@ -677,7 +676,7 @@ function RecapTab({ user, accounts, activeAccount }) {
             <Stat label="Most Traded" value={periodStats.topPair ? periodStats.topPair[0] : "—"} sub={periodStats.topPair ? `${periodStats.topPair[1]} trades` : ""} />
             {periodStats.mfeCount > 0 && (
               <>
-                <Stat label="Capture Rate" value={periodStats.captureRate != null ? `${periodStats.captureRate.toFixed(0)}%` : "—"} color={periodStats.captureRate != null && periodStats.captureRate >= 60 ? T.green : periodStats.captureRate != null && periodStats.captureRate >= 40 ? T.amber : T.red} sub={`${periodStats.mfeCount} trade${periodStats.mfeCount === 1 ? "" : "s"} w/ MFE`} />
+                <Stat label="Capture Rate" value={periodStats.captureRate != null ? `${periodStats.captureRate.toFixed(0)}%` : "—"} color={periodStats.captureRate != null && periodStats.captureRate >= 60 ? T.green : periodStats.captureRate != null && periodStats.captureRate >= 40 ? T.amber : T.red} sub={`${periodStats.mfeCount} winner${periodStats.mfeCount === 1 ? "" : "s"} w/ MFE`} />
                 <Stat label="Left on Table" value={`-${periodStats.totalLeftOnTable.toFixed(2)}R`} color={T.red} sub="missed gains" />
               </>
             )}
@@ -729,17 +728,29 @@ function RecapTab({ user, accounts, activeAccount }) {
                   {open && (
                     <div style={{ padding: "0 14px 14px 14px", display: "flex", flexDirection: "column", gap: 10, borderTop: `1px solid ${T.borderLight}` }}>
                       {(() => {
-                        const mfe = parseRR(t.max_r);
                         const real = realizedR(t);
-                        if (mfe == null && real == null && !t.rr) return null;
-                        const left = (mfe != null && real != null) ? Math.max(0, mfe - real) : null;
+                        // For wins: show full Intended → Realized → MFE → Left on table breakdown
+                        // For losses/BE: show just Intended and Realized (no MFE row — that's noise)
+                        if (t.result === "Win") {
+                          const mfe = parseRR(t.max_r);
+                          if (mfe == null && real == null && !t.rr) return null;
+                          const left = (mfe != null && real != null) ? Math.max(0, mfe - real) : null;
+                          return (
+                            <div style={{ marginTop: 10, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6, display: "flex", gap: 14, flexWrap: "wrap", fontFamily: mono, fontSize: 11 }}>
+                              {t.rr && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Intended:</span> <span style={{ color: T.text, fontWeight: 600 }}>{t.rr}</span></span>}
+                              {real != null && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Realized:</span> <span style={{ color: cP(real), fontWeight: 600 }}>{real >= 0 ? "+" : ""}{real.toFixed(2)}R</span></span>}
+                              {mfe != null && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>MFE:</span> <span style={{ color: T.green, fontWeight: 600 }}>+{mfe.toFixed(2)}R</span></span>}
+                              {left != null && left > 0.1 && <span style={{ color: T.red, fontWeight: 700 }}>← left {left.toFixed(2)}R on table</span>}
+                              {left != null && left <= 0.1 && mfe > 0 && <span style={{ color: T.green, fontWeight: 700 }}>✓ captured fully</span>}
+                            </div>
+                          );
+                        }
+                        // Non-win: simple intended vs realized
+                        if (!t.rr && real == null) return null;
                         return (
                           <div style={{ marginTop: 10, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6, display: "flex", gap: 14, flexWrap: "wrap", fontFamily: mono, fontSize: 11 }}>
                             {t.rr && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Intended:</span> <span style={{ color: T.text, fontWeight: 600 }}>{t.rr}</span></span>}
                             {real != null && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Realized:</span> <span style={{ color: cP(real), fontWeight: 600 }}>{real >= 0 ? "+" : ""}{real.toFixed(2)}R</span></span>}
-                            {mfe != null && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>MFE:</span> <span style={{ color: T.green, fontWeight: 600 }}>+{mfe.toFixed(2)}R</span></span>}
-                            {left != null && left > 0.1 && <span style={{ color: T.red, fontWeight: 700 }}>← left {left.toFixed(2)}R on table</span>}
-                            {left != null && left <= 0.1 && mfe > 0 && <span style={{ color: T.green, fontWeight: 700 }}>✓ captured fully</span>}
                           </div>
                         );
                       })()}
@@ -1110,34 +1121,30 @@ function Journal({ user, onLogout }) {
     const avgIntendedR = intendedRs.length ? intendedRs.reduce((s,v) => s+v, 0) / intendedRs.length : null;
     const avgRealizedR = rValues.length ? rValues.reduce((s,v) => s+v, 0) / rValues.length : null;
 
-    // MFE / Exit Quality — only for trades where max_r was filled in
-    const mfeTrades = trades.map(t => {
+    // MFE / Exit Quality — only for WINNING trades where max_r was filled in
+    // (MFE on losers is noise — the question we're answering is "did I close winners too early")
+    const mfeTrades = trades.filter(t => t.result === "Win").map(t => {
       const mfe = parseRR(t.max_r);
       const realized = realizedR(t);
       if (mfe == null || realized == null) return null;
-      // Only meaningful if MFE >= realized (MFE is the PEAK favorable; realized can be less)
-      // For losses, MFE might be 0 or near 0 — that's fine
       return { id: t.id, date: t.date, pair: t.pair, direction: t.direction, result: t.result, mfe, realized, leftOnTable: Math.max(0, mfe - realized) };
     }).filter(x => x != null);
 
     let exitQuality = null;
+    const totalWins = trades.filter(t => t.result === "Win").length;
     if (mfeTrades.length > 0) {
       const totalMFE = mfeTrades.reduce((s, x) => s + x.mfe, 0);
       const totalRealized = mfeTrades.reduce((s, x) => s + x.realized, 0);
       const totalLeftOnTable = mfeTrades.reduce((s, x) => s + x.leftOnTable, 0);
       const avgMFE = totalMFE / mfeTrades.length;
       const avgRealized2 = totalRealized / mfeTrades.length;
-      // Capture rate: how much of the favorable move did you actually capture, on average?
-      // Using sum-of-positive-MFE as denominator avoids division weirdness with losing trades
-      const positiveMFE = mfeTrades.filter(x => x.mfe > 0);
-      const captureRate = positiveMFE.length > 0
-        ? (positiveMFE.reduce((s, x) => s + Math.max(0, x.realized), 0) / positiveMFE.reduce((s, x) => s + x.mfe, 0)) * 100
-        : null;
-      // Worst "left on table" — top 5 trades where MFE - realized was biggest
+      // Capture rate: realized R as % of MFE — across all logged winners
+      const captureRate = totalMFE > 0 ? (totalRealized / totalMFE) * 100 : null;
+      // Worst "left on table" — top 5 winners where MFE - realized was biggest
       const worstLeft = [...mfeTrades].sort((a, b) => b.leftOnTable - a.leftOnTable).slice(0, 5).filter(x => x.leftOnTable > 0.1);
       exitQuality = {
         n: mfeTrades.length,
-        coverage: (mfeTrades.length / trades.length) * 100,
+        coverage: totalWins > 0 ? (mfeTrades.length / totalWins) * 100 : 0,
         avgMFE,
         avgRealized: avgRealized2,
         captureRate,
@@ -1384,16 +1391,16 @@ function Journal({ user, onLogout }) {
                     </div>
                   </div>
 
-                  {/* Exit Quality (MFE) — NEW */}
+                  {/* Exit Quality (MFE) — NEW — winners only */}
                   <div style={{ ...cardS, padding: 18 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Exit Quality (MFE Analysis)</span>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>How much of the available move are you actually capturing?</span>
+                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Exit Quality (Winners Only)</span>
+                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Did you close your winning trades too early?</span>
                     </div>
                     {!S.exitQuality ? (
                       <div style={{ color: T.textLight, fontSize: 12, padding: 20, textAlign: "center", lineHeight: 1.6 }}>
-                        Fill in the <strong>"Max R Reached"</strong> field on your trades to see exit quality stats.<br />
-                        <span style={{ fontSize: 11, opacity: 0.7 }}>Tracks the gap between how far each trade went vs. where you actually exited.</span>
+                        On your winning trades, fill in the <strong>"Max R Reached"</strong> field to see exit quality stats.<br />
+                        <span style={{ fontSize: 11, opacity: 0.7 }}>Tracks the gap between how far each winner went vs. where you actually exited.</span>
                       </div>
                     ) : (<>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
@@ -1401,7 +1408,7 @@ function Journal({ user, onLogout }) {
                         <Stat icon="✓" label="Avg Realized" value={`${S.exitQuality.avgRealized >= 0 ? "+" : ""}${S.exitQuality.avgRealized.toFixed(2)}R`} color={cP(S.exitQuality.avgRealized)} sub="Where you exited" />
                         <Stat icon="%" label="Capture Rate" value={S.exitQuality.captureRate != null ? `${S.exitQuality.captureRate.toFixed(0)}%` : "—"} color={S.exitQuality.captureRate != null && S.exitQuality.captureRate >= 60 ? T.green : S.exitQuality.captureRate != null && S.exitQuality.captureRate >= 40 ? T.amber : T.red} sub="of available move" />
                         <Stat icon="✕" label="Left on Table" value={`-${S.exitQuality.totalLeftOnTable.toFixed(2)}R`} color={T.red} sub="total across trades" />
-                        <Stat icon="◧" label="Coverage" value={`${S.exitQuality.coverage.toFixed(0)}%`} sub={`${S.exitQuality.n} of ${S.n} logged`} />
+                        <Stat icon="◧" label="Coverage" value={`${S.exitQuality.coverage.toFixed(0)}%`} sub={`${S.exitQuality.n} of ${S.w} wins logged`} />
                       </div>
 
                       {S.exitQuality.worstLeft.length > 0 && (
@@ -1541,9 +1548,11 @@ function Journal({ user, onLogout }) {
                       <Field label="Entry"><input type="text" value={form.entry} onChange={e => setForm({ ...form, entry: e.target.value })} style={inputS} /></Field>
                       <Field label="Exit"><input type="text" value={form.exit} onChange={e => setForm({ ...form, exit: e.target.value })} style={inputS} /></Field>
                       <Field label="R:R"><input type="text" value={form.rr} onChange={e => setForm({ ...form, rr: e.target.value })} placeholder="1:2.5" style={inputS} /></Field>
-                      <Field label="Max R Reached"><input type="text" value={form.max_r} onChange={e => setForm({ ...form, max_r: e.target.value })} placeholder="1:5 or 4" style={inputS} /></Field>
+                      {form.result === "Win" && (
+                        <Field label="Max R Reached"><input type="text" value={form.max_r} onChange={e => setForm({ ...form, max_r: e.target.value })} placeholder="1:5 or 4" style={inputS} /></Field>
+                      )}
                       <Field label="PnL %"><input type="number" step="0.01" value={form.pnl_pct} onChange={e => setForm({ ...form, pnl_pct: e.target.value })} style={inputS} /></Field>
-                      <Field label="Result"><select value={form.result} onChange={e => setForm({ ...form, result: e.target.value })} style={selectS}><option>Win</option><option>Loss</option><option>Breakeven</option></select></Field>
+                      <Field label="Result"><select value={form.result} onChange={e => { const newResult = e.target.value; setForm({ ...form, result: newResult, max_r: newResult === "Win" ? form.max_r : "" }); }} style={selectS}><option>Win</option><option>Loss</option><option>Breakeven</option></select></Field>
                       <Field label="Bias Type"><select value={form.bias_type} onChange={e => setForm({ ...form, bias_type: e.target.value })} style={selectS}>{BIAS_TYPES.map(b => <option key={b}>{b}</option>)}</select></Field>
                       <Field label="Rating">
                         <div style={{ display: "flex", gap: 3, marginTop: 2 }}>
@@ -1607,7 +1616,7 @@ function Journal({ user, onLogout }) {
                           <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.entry}</td>
                           <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.exit}</td>
                           <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.rr || "—"}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: t.max_r ? T.green : T.textLight }}>{t.max_r || "—"}</td>
+                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: t.result === "Win" && t.max_r ? T.green : T.textLight }}>{t.result === "Win" ? (t.max_r || "—") : "—"}</td>
                           <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600 }}>
                             <span style={{ color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span><br />
                             <span style={{ fontSize: 9, color: T.textLight }}>{fU(t.pnl_usd)}</span>
