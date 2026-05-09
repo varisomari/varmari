@@ -1,15 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, CartesianGrid, ReferenceLine, LineChart, Line } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, CartesianGrid, ReferenceLine } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
-// ── Supabase client ──
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-// ── Constants ──
 const DEFAULT_PAIRS = [
   "EUR/USD","GBP/USD","USD/JPY","USD/CHF","AUD/USD","NZD/USD","USD/CAD",
   "EUR/GBP","EUR/JPY","EUR/CHF","EUR/AUD","EUR/NZD","EUR/CAD",
@@ -23,7 +21,6 @@ const SESSIONS = ["London","New York","Tokyo"];
 const DAYS_W = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
 const BIAS_TYPES = ["Transition","Re-Transition","Confirmation","Continuation","None"];
 
-// ── Theme ──
 const T = {
   bg: "#F5F0E8", card: "#FFFFFF", cardAlt: "#FAF8F4", border: "#E8E0D4",
   borderLight: "#F0EBE3", text: "#2C2418", textMid: "#6B5D4F", textLight: "#9C8E7E",
@@ -35,13 +32,11 @@ const T = {
 const font = `'Instrument Sans', 'SF Pro Display', -apple-system, sans-serif`;
 const mono = `'JetBrains Mono', 'SF Mono', monospace`;
 
-// ── Helpers ──
 const fP = v => { if (v == null || v === "") return "—"; const s = v >= 0 ? "+" : ""; return `${s}${Number(v).toFixed(2)}%`; };
 const fU = v => { if (v == null || v === "") return "—"; const s = v >= 0 ? "+" : "−"; return `${s}$${Math.abs(v).toFixed(2)}`; };
 const cP = v => v > 0 ? T.green : v < 0 ? T.red : T.textMid;
 const getDay = d => { const dt = new Date(d + "T12:00:00"); return DAYS_W[dt.getDay() - 1] || "Friday"; };
 
-// Parse "1:2.5" or "2.5" → numeric reward multiple. Returns null if unparseable.
 const parseRR = (rr) => {
   if (rr == null) return null;
   const s = String(rr).trim();
@@ -55,7 +50,6 @@ const parseRR = (rr) => {
   return isNaN(n) ? null : n;
 };
 
-// Realized R = pnl_pct / risk%. e.g. risk 1%, gained 2.5% → +2.5R
 const realizedR = (t) => {
   const risk = parseFloat(t.risk);
   const pnl = parseFloat(t.pnl_pct);
@@ -63,13 +57,9 @@ const realizedR = (t) => {
   return pnl / risk;
 };
 
-// Date helpers — operate strictly in LOCAL time to avoid UTC drift.
-// Critical: never use toISOString() on a Date because that converts to UTC,
-// which can shift the date by 1 in non-UTC timezones (e.g. Dubai is UTC+4 → late evening flips a day).
 const pad2 = n => String(n).padStart(2, "0");
 const isoDate = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
-// Parse a "YYYY-MM-DD" date string into a Date object at LOCAL noon (avoids DST/timezone edge cases).
 const parseLocalDate = (s) => {
   if (s instanceof Date) return new Date(s.getFullYear(), s.getMonth(), s.getDate(), 12, 0, 0, 0);
   if (typeof s !== "string") return new Date();
@@ -79,17 +69,16 @@ const parseLocalDate = (s) => {
 };
 
 const startOfWeek = (date) => {
-  // Take the date, set it to local noon, then walk back to the Monday of that week.
   const d = (date instanceof Date) ? new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0) : parseLocalDate(date);
-  const day = d.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  const day = d.getDay();
   const diff = (day === 0 ? -6 : 1 - day);
   d.setDate(d.getDate() + diff);
   return d;
 };
+// CHANGE #1: week ends FRIDAY (Mon + 4) instead of Sunday
 const endOfWeek = (date) => {
   const s = startOfWeek(date);
-  const e = new Date(s.getFullYear(), s.getMonth(), s.getDate() + 6, 12, 0, 0, 0);
-  return e;
+  return new Date(s.getFullYear(), s.getMonth(), s.getDate() + 4, 12, 0, 0, 0);
 };
 const startOfMonth = (date) => {
   const d = (date instanceof Date) ? date : parseLocalDate(date);
@@ -102,11 +91,10 @@ const endOfMonth = (date) => {
 const formatPeriodLabel = (type, startISO) => {
   const d = parseLocalDate(startISO);
   if (type === "week") {
-    // Re-derive Monday and Sunday from the saved start date in case it drifted before.
     const monday = startOfWeek(d);
-    const sunday = endOfWeek(d);
+    const friday = endOfWeek(d);
     const sM = monday.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-    const eM = sunday.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    const eM = friday.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     return `Week of ${sM} – ${eM}`;
   }
   return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
@@ -120,11 +108,10 @@ const emptyTrade = () => ({
   notes_technical: "", notes_fundamental: "", notes_mistakes: "",
 });
 
-const emptyRecap = () => ({
-  worked_text: "", didnt_work_text: "", pattern_text: "", change_text: "", conviction: 3,
-});
+// CHANGE #2: 4 sections renamed. Mapped to old DB columns so NO Supabase changes needed:
+// positives→worked_text, technical→didnt_work_text, fundamental→pattern_text, mistakes→change_text
+const emptyRecap = () => ({ positives: "", technical: "", fundamental: "", mistakes: "" });
 
-// ── Reusable styles ──
 const cardS = { background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, overflow: "hidden" };
 const inputS = {
   width: "100%", padding: "8px 10px", fontSize: 13, fontFamily: mono, color: T.text,
@@ -139,9 +126,6 @@ const btnP = { padding: "9px 20px", fontSize: 12, fontWeight: 600, fontFamily: f
 const btnG = { padding: "8px 14px", fontSize: 12, fontWeight: 500, fontFamily: font, color: T.textMid, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 8, cursor: "pointer" };
 const center = { display: "flex", alignItems: "center", justifyContent: "center" };
 
-// ══════════════════════════════════════════
-// REUSABLE COMPONENTS
-// ══════════════════════════════════════════
 function Pill({ text, type }) {
   const m = { Win: [T.greenBg, T.green], Loss: [T.redBg, T.red], Breakeven: [T.cardAlt, T.textMid], Long: [T.greenBg, T.green], Short: [T.redBg, T.red], pair: [T.accentBg, T.accent], session: [T.blueBg, T.blue], bias: [T.purpleBg, T.purple] };
   const [bg, fg] = m[text] || m[type] || [T.cardAlt, T.textMid];
@@ -164,15 +148,11 @@ function Stat({ label, value, color, sub, icon }) {
   </div>;
 }
 
-// ══════════════════════════════════════════
-// LOGIN SCREEN
-// ══════════════════════════════════════════
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
   const handleLogin = async () => {
     setLoading(true); setError("");
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -180,7 +160,6 @@ function LoginScreen({ onLogin }) {
     if (error) { setError(error.message); return; }
     onLogin(data.user);
   };
-
   return (
     <div style={{ minHeight: "100vh", background: T.bg, ...center, fontFamily: font, padding: 20 }}>
       <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -198,17 +177,12 @@ function LoginScreen({ onLogin }) {
           {error && <div style={{ fontSize: 12, color: T.red, background: T.redBg, padding: 10, borderRadius: 8, fontFamily: mono }}>{error}</div>}
           <button onClick={handleLogin} disabled={loading || !email || !password} style={{ ...btnP, padding: "12px", marginTop: 6, opacity: loading ? 0.6 : 1 }}>{loading ? "Signing in..." : "Sign In"}</button>
         </div>
-        <div style={{ marginTop: 18, fontSize: 10, color: T.textLight, fontFamily: mono, textAlign: "center", lineHeight: 1.6 }}>
-          Invite-only. Contact admin for access.
-        </div>
+        <div style={{ marginTop: 18, fontSize: 10, color: T.textLight, fontFamily: mono, textAlign: "center", lineHeight: 1.6 }}>Invite-only. Contact admin for access.</div>
       </div>
     </div>
   );
 }
 
-// ══════════════════════════════════════════
-// POSITION SIZE CALCULATOR (UNCHANGED)
-// ══════════════════════════════════════════
 const INSTRUMENTS = [
   {id:"EURUSD",label:"EUR/USD",cat:"Forex",pipSize:0.0001,pipVal:10,cs:100000,unit:"units"},
   {id:"GBPUSD",label:"GBP/USD",cat:"Forex",pipSize:0.0001,pipVal:10,cs:100000,unit:"units"},
@@ -275,20 +249,17 @@ function PositionCalc() {
   const [sl, setSl] = useState("");
   const [risk, setRisk] = useState("");
   const wrapRef = useRef(null);
-
   useEffect(() => {
     const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setDropOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
-
   const filteredInst = useMemo(() => {
     if (!dropOpen) return INSTRUMENTS;
     const q = search.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (!q) return INSTRUMENTS;
     return INSTRUMENTS.filter(i => i.id.toLowerCase().includes(q) || i.label.toLowerCase().replace(/[^a-z0-9]/g, "").includes(q) || i.cat.toLowerCase().includes(q));
   }, [search, dropOpen]);
-
   const e = parseFloat(entry), s = parseFloat(sl), r = parseFloat(risk);
   const valid = selected && !isNaN(e) && !isNaN(s) && !isNaN(r) && e !== s && r > 0;
   const isLong = valid ? e > s : true;
@@ -300,7 +271,6 @@ function PositionCalc() {
   const posValue = units * (e || 0);
   const fmtN = (n, d = 2) => isNaN(n) ? "—" : n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
   const catColor = { Forex: T.accent, Metals: T.amber, Energy: T.green, Indices: T.blue, Crypto: T.purple };
-
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: "36px 20px" }}>
       <div style={{ textAlign: "center", marginBottom: 28 }}>
@@ -330,18 +300,9 @@ function PositionCalc() {
             </div>
           )}
         </div>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Entry Price</label>
-          <input type="number" inputMode="decimal" value={entry} onChange={e => setEntry(e.target.value)} placeholder="0" style={{ ...inputS, padding: "12px" }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Stop Loss</label>
-          <input type="number" inputMode="decimal" value={sl} onChange={e => setSl(e.target.value)} placeholder="0" style={{ ...inputS, padding: "12px" }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Risk Amount ($)</label>
-          <input type="number" inputMode="decimal" value={risk} onChange={e => setRisk(e.target.value)} placeholder="0" style={{ ...inputS, padding: "12px" }} />
-        </div>
+        <div><label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Entry Price</label><input type="number" inputMode="decimal" value={entry} onChange={e => setEntry(e.target.value)} placeholder="0" style={{ ...inputS, padding: "12px" }} /></div>
+        <div><label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Stop Loss</label><input type="number" inputMode="decimal" value={sl} onChange={e => setSl(e.target.value)} placeholder="0" style={{ ...inputS, padding: "12px" }} /></div>
+        <div><label style={{ fontSize: 12, fontWeight: 600, color: T.textMid, marginBottom: 5, display: "block" }}>Risk Amount ($)</label><input type="number" inputMode="decimal" value={risk} onChange={e => setRisk(e.target.value)} placeholder="0" style={{ ...inputS, padding: "12px" }} /></div>
       </div>
       {valid && (
         <div style={{ ...cardS, padding: 22, marginTop: 16 }}>
@@ -366,19 +327,14 @@ function PositionCalc() {
   );
 }
 
-// ══════════════════════════════════════════
-// ACCOUNT MANAGER MODAL (UNCHANGED)
-// ══════════════════════════════════════════
 function AccountModal({ accounts, activeId, onClose, onCreate, onDelete, onSelect }) {
   const [name, setName] = useState("");
   const [balance, setBalance] = useState("100000");
-
   const handleCreate = async () => {
     if (!name.trim()) return;
     await onCreate(name.trim(), parseFloat(balance) || 100000);
     setName(""); setBalance("100000");
   };
-
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 20 }}>
       <div style={{ ...cardS, padding: 24, width: "100%", maxWidth: 480 }}>
@@ -386,7 +342,6 @@ function AccountModal({ accounts, activeId, onClose, onCreate, onDelete, onSelec
           <span style={{ fontSize: 16, fontWeight: 700 }}>Manage Accounts</span>
           <button onClick={onClose} style={btnG}>✕</button>
         </div>
-
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Your Accounts</div>
           {accounts.length === 0 ? <div style={{ color: T.textLight, fontSize: 13, padding: 12 }}>No accounts yet. Create one below.</div>
@@ -404,7 +359,6 @@ function AccountModal({ accounts, activeId, onClose, onCreate, onDelete, onSelec
             </div>
           ))}
         </div>
-
         <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 16 }}>
           <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Create New Account</div>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 10 }}>
@@ -418,28 +372,13 @@ function AccountModal({ accounts, activeId, onClose, onCreate, onDelete, onSelec
   );
 }
 
-// ══════════════════════════════════════════
-// PAIRS MANAGER MODAL (NEW)
-// ══════════════════════════════════════════
 function PairsModal({ pairs, onClose, onAdd, onUpdate, onDelete, onResetDefaults }) {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
-
-  const handleAdd = async () => {
-    const name = newName.trim();
-    if (!name) return;
-    await onAdd(name);
-    setNewName("");
-  };
-
+  const handleAdd = async () => { const name = newName.trim(); if (!name) return; await onAdd(name); setNewName(""); };
   const handleStartEdit = (p) => { setEditingId(p.id); setEditValue(p.name); };
-  const handleSaveEdit = async () => {
-    if (!editValue.trim()) return;
-    await onUpdate(editingId, editValue.trim());
-    setEditingId(null); setEditValue("");
-  };
-
+  const handleSaveEdit = async () => { if (!editValue.trim()) return; await onUpdate(editingId, editValue.trim()); setEditingId(null); setEditValue(""); };
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 20 }}>
       <div style={{ ...cardS, padding: 24, width: "100%", maxWidth: 540, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
@@ -447,7 +386,6 @@ function PairsModal({ pairs, onClose, onAdd, onUpdate, onDelete, onResetDefaults
           <span style={{ fontSize: 16, fontWeight: 700 }}>Manage Pairs</span>
           <button onClick={onClose} style={btnG}>✕</button>
         </div>
-
         <div style={{ borderBottom: `1px solid ${T.border}`, paddingBottom: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Add New Pair</div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -455,14 +393,10 @@ function PairsModal({ pairs, onClose, onAdd, onUpdate, onDelete, onResetDefaults
             <button onClick={handleAdd} style={{ ...btnP, padding: "9px 16px", whiteSpace: "nowrap" }}>+ Add</button>
           </div>
         </div>
-
         <div style={{ flex: 1, overflowY: "auto", marginBottom: 12 }}>
           <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Your Pairs ({pairs.length})</div>
-          {pairs.length === 0 ? (
-            <div style={{ color: T.textLight, fontSize: 13, padding: 16, textAlign: "center" }}>
-              No pairs yet. Click "Restore Default List" or add your own above.
-            </div>
-          ) : pairs.map(p => (
+          {pairs.length === 0 ? <div style={{ color: T.textLight, fontSize: 13, padding: 16, textAlign: "center" }}>No pairs yet. Click "Restore Default List" or add your own above.</div>
+           : pairs.map(p => (
             <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: T.cardAlt, borderRadius: 8, marginBottom: 4 }}>
               {editingId === p.id ? (
                 <>
@@ -482,7 +416,6 @@ function PairsModal({ pairs, onClose, onAdd, onUpdate, onDelete, onResetDefaults
             </div>
           ))}
         </div>
-
         <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <button onClick={onResetDefaults} style={{ ...btnG, fontSize: 11, color: T.textMid }}>Restore Default List</button>
           <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Existing trades keep their pair names</span>
@@ -492,9 +425,7 @@ function PairsModal({ pairs, onClose, onAdd, onUpdate, onDelete, onResetDefaults
   );
 }
 
-// ══════════════════════════════════════════
-// RECAP TAB (NEW) — declared before Journal so it's in scope
-// ══════════════════════════════════════════
+// CHANGE #3: Cleaner Recap UI — compact bar, collapsible notes, 4-section grid (Positives/Tech/Fund/Mistakes)
 function RecapTab({ user, accounts, activeAccount }) {
   const [periodType, setPeriodType] = useState("week");
   const [periodDate, setPeriodDate] = useState(new Date());
@@ -502,12 +433,12 @@ function RecapTab({ user, accounts, activeAccount }) {
   const [recapId, setRecapId] = useState(null);
   const [periodTrades, setPeriodTrades] = useState([]);
   const [pastRecaps, setPastRecaps] = useState([]);
-  const [scope, setScope] = useState("active"); // "active" | "all" | account.id
+  const [scope, setScope] = useState("active");
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [expandedTrades, setExpandedTrades] = useState({});
-  const [neighborCounts, setNeighborCounts] = useState({ prev: null, next: null });
 
   const { periodStart, periodEnd, periodLabel } = useMemo(() => {
     const s = periodType === "week" ? startOfWeek(periodDate) : startOfMonth(periodDate);
@@ -521,7 +452,6 @@ function RecapTab({ user, accounts, activeAccount }) {
     return scope;
   }, [scope, activeAccount]);
 
-  // Load trades + existing recap for this period
   useEffect(() => {
     const load = async () => {
       let q = supabase.from("trades").select("*").gte("date", periodStart).lte("date", periodEnd).order("date", { ascending: true });
@@ -537,11 +467,10 @@ function RecapTab({ user, accounts, activeAccount }) {
       const rRow = rRows && rRows.length > 0 ? rRows[0] : null;
       if (rRow) {
         setRecap({
-          worked_text: rRow.worked_text || "",
-          didnt_work_text: rRow.didnt_work_text || "",
-          pattern_text: rRow.pattern_text || "",
-          change_text: rRow.change_text || "",
-          conviction: rRow.conviction || 3,
+          positives: rRow.worked_text || "",
+          technical: rRow.didnt_work_text || "",
+          fundamental: rRow.pattern_text || "",
+          mistakes: rRow.change_text || "",
         });
         setRecapId(rRow.id);
         setSavedAt(rRow.updated_at || rRow.created_at);
@@ -551,11 +480,11 @@ function RecapTab({ user, accounts, activeAccount }) {
         setSavedAt(null);
       }
       setExpandedTrades({});
+      setNotesOpen(false);
     };
     load();
   }, [periodStart, periodEnd, periodType, effectiveAccountId, user.id]);
 
-  // Load past recaps list
   useEffect(() => {
     const loadPast = async () => {
       let q = supabase.from("recaps").select("*").eq("period_type", periodType).eq("user_id", user.id).order("period_start", { ascending: false }).limit(30);
@@ -574,78 +503,15 @@ function RecapTab({ user, accounts, activeAccount }) {
     const wr = (w.length + l.length) > 0 ? (w.length / (w.length + l.length)) * 100 : 0;
     const tPnl = periodTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
     const tUsd = periodTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
-    const best = periodTrades.reduce((m, t) => Math.max(m, parseFloat(t.pnl_pct) || -Infinity), -Infinity);
-    const worst = periodTrades.reduce((m, t) => Math.min(m, parseFloat(t.pnl_pct) || Infinity), Infinity);
-    const rValues = periodTrades.map(realizedR).filter(v => v != null);
-    const totalR = rValues.reduce((s, v) => s + v, 0);
     const pairCounts = {};
     periodTrades.forEach(t => { if (t.pair) pairCounts[t.pair] = (pairCounts[t.pair] || 0) + 1; });
     const topPair = Object.entries(pairCounts).sort((a, b) => b[1] - a[1])[0];
-
-    // Period MFE / Exit Quality — winners only
-    const mfePairs = periodTrades.filter(t => t.result === "Win").map(t => {
-      const mfe = parseRR(t.max_r);
-      const real = realizedR(t);
-      if (mfe == null || real == null) return null;
-      return { mfe, real, left: Math.max(0, mfe - real) };
-    }).filter(x => x != null);
-    let totalLeftOnTable = null, captureRate = null, mfeCount = mfePairs.length;
-    if (mfeCount > 0) {
-      totalLeftOnTable = mfePairs.reduce((s, x) => s + x.left, 0);
-      const totalMFE = mfePairs.reduce((s, x) => s + x.mfe, 0);
-      const totalReal = mfePairs.reduce((s, x) => s + x.real, 0);
-      if (totalMFE > 0) captureRate = (totalReal / totalMFE) * 100;
-    }
-
-    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, best: isFinite(best) ? best : null, worst: isFinite(worst) ? worst : null, totalR, topPair, totalLeftOnTable, captureRate, mfeCount };
+    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, topPair };
   }, [periodTrades]);
 
-  // Trades that have at least one note filled in
-  const tradesWithNotes = useMemo(() => {
-    return periodTrades.filter(t => (t.notes_technical || "").trim() || (t.notes_fundamental || "").trim() || (t.notes_mistakes || "").trim());
-  }, [periodTrades]);
-
-  // Auto-expand if 10 or fewer trades with notes
-  useEffect(() => {
-    if (tradesWithNotes.length > 0 && tradesWithNotes.length <= 10 && Object.keys(expandedTrades).length === 0) {
-      const all = {};
-      tradesWithNotes.forEach(t => { all[t.id] = true; });
-      setExpandedTrades(all);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tradesWithNotes.length]);
-
+  const tradesWithNotes = useMemo(() => periodTrades.filter(t => (t.notes_technical || "").trim() || (t.notes_fundamental || "").trim() || (t.notes_mistakes || "").trim()), [periodTrades]);
   const toggleTradeExpanded = (id) => setExpandedTrades(p => ({ ...p, [id]: !p[id] }));
-  const expandAll = () => { const all = {}; tradesWithNotes.forEach(t => { all[t.id] = true; }); setExpandedTrades(all); };
-  const collapseAll = () => setExpandedTrades({});
 
-  // Compute prev/next period boundaries and fetch trade counts for them
-  useEffect(() => {
-    const computeBoundaries = (offsetUnits) => {
-      const d = new Date(periodDate.getFullYear(), periodDate.getMonth(), periodDate.getDate(), 12, 0, 0, 0);
-      if (periodType === "week") d.setDate(d.getDate() + offsetUnits * 7);
-      else d.setMonth(d.getMonth() + offsetUnits);
-      const s = periodType === "week" ? startOfWeek(d) : startOfMonth(d);
-      const e = periodType === "week" ? endOfWeek(d) : endOfMonth(d);
-      return { start: isoDate(s), end: isoDate(e) };
-    };
-    const fetchCount = async (range) => {
-      let q = supabase.from("trades").select("id", { count: "exact", head: true }).gte("date", range.start).lte("date", range.end);
-      if (effectiveAccountId) q = q.eq("account_id", effectiveAccountId);
-      else q = q.eq("user_id", user.id);
-      const { count } = await q;
-      return count || 0;
-    };
-    const load = async () => {
-      const prev = computeBoundaries(-1);
-      const next = computeBoundaries(1);
-      const [pc, nc] = await Promise.all([fetchCount(prev), fetchCount(next)]);
-      setNeighborCounts({ prev: pc, next: nc });
-    };
-    load();
-  }, [periodStart, periodEnd, periodType, effectiveAccountId, user.id]);
-
-  // Jump helpers: This Week / Last Week / This Month / Last Month
   const jumpToCurrent = () => setPeriodDate(new Date());
   const jumpToPrevious = () => {
     const d = new Date();
@@ -653,32 +519,21 @@ function RecapTab({ user, accounts, activeAccount }) {
     else d.setMonth(d.getMonth() - 1);
     setPeriodDate(d);
   };
-
-  // Determine if currently viewing the "current" period (this week or this month)
   const todayISO = isoDate(new Date());
   const isViewingCurrent = todayISO >= periodStart && todayISO <= periodEnd;
 
   const saveRecap = async () => {
     setSaving(true);
     const payload = {
-      user_id: user.id,
-      account_id: effectiveAccountId,
-      period_type: periodType,
-      period_start: periodStart,
-      period_end: periodEnd,
-      worked_text: recap.worked_text,
-      didnt_work_text: recap.didnt_work_text,
-      pattern_text: recap.pattern_text,
-      change_text: recap.change_text,
-      conviction: recap.conviction,
-      updated_at: new Date().toISOString(),
+      user_id: user.id, account_id: effectiveAccountId,
+      period_type: periodType, period_start: periodStart, period_end: periodEnd,
+      worked_text: recap.positives, didnt_work_text: recap.technical,
+      pattern_text: recap.fundamental, change_text: recap.mistakes,
+      conviction: 3, updated_at: new Date().toISOString(),
     };
     let result;
-    if (recapId) {
-      result = await supabase.from("recaps").update(payload).eq("id", recapId).select().single();
-    } else {
-      result = await supabase.from("recaps").insert(payload).select().single();
-    }
+    if (recapId) result = await supabase.from("recaps").update(payload).eq("id", recapId).select().single();
+    else result = await supabase.from("recaps").insert(payload).select().single();
     setSaving(false);
     if (result.error) { alert("Save failed: " + result.error.message); return; }
     setRecapId(result.data.id);
@@ -693,232 +548,152 @@ function RecapTab({ user, accounts, activeAccount }) {
     else d.setMonth(d.getMonth() + dir);
     setPeriodDate(d);
   };
-
-  const jumpTo = (recapRow) => {
-    setPeriodType(recapRow.period_type);
-    setPeriodDate(parseLocalDate(recapRow.period_start));
-  };
-
+  const jumpTo = (recapRow) => { setPeriodType(recapRow.period_type); setPeriodDate(parseLocalDate(recapRow.period_start)); };
   const scopeLabel = scope === "all" ? "All Accounts" : (scope === "active" ? `${activeAccount?.name || "—"}` : (accounts.find(a => a.id === scope)?.name || "—"));
+
+  const sectionStyle = (color) => ({ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 16, display: "flex", flexDirection: "column" });
+  const sectionLabel = (color) => ({ fontSize: 11, fontWeight: 700, color, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Period selector */}
-      <div style={{ ...cardS, padding: 18 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+      {/* COMPACT TOP BAR */}
+      <div style={{ ...cardS, padding: 14 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 0 }}>
-            <button onClick={() => setPeriodType("week")} style={{ ...btnG, background: periodType === "week" ? T.accent : "transparent", color: periodType === "week" ? "#fff" : T.textMid, borderColor: periodType === "week" ? T.accent : T.border, borderRadius: "8px 0 0 8px" }}>Weekly</button>
-            <button onClick={() => setPeriodType("month")} style={{ ...btnG, background: periodType === "month" ? T.accent : "transparent", color: periodType === "month" ? "#fff" : T.textMid, borderColor: periodType === "month" ? T.accent : T.border, borderRadius: "0 8px 8px 0", borderLeft: "none" }}>Monthly</button>
+            <button onClick={() => setPeriodType("week")} style={{ ...btnG, padding: "7px 14px", background: periodType === "week" ? T.accent : "transparent", color: periodType === "week" ? "#fff" : T.textMid, borderColor: periodType === "week" ? T.accent : T.border, borderRadius: "8px 0 0 8px" }}>Weekly</button>
+            <button onClick={() => setPeriodType("month")} style={{ ...btnG, padding: "7px 14px", background: periodType === "month" ? T.accent : "transparent", color: periodType === "month" ? "#fff" : T.textMid, borderColor: periodType === "month" ? T.accent : T.border, borderRadius: "0 8px 8px 0", borderLeft: "none" }}>Monthly</button>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button onClick={() => shiftPeriod(-1)} style={{ ...btnG, padding: "6px 12px" }}>← Prev</button>
-            <div style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, padding: "0 12px", minWidth: 220, textAlign: "center" }}>{periodLabel}</div>
-            <button onClick={() => shiftPeriod(1)} style={{ ...btnG, padding: "6px 12px" }}>Next →</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button onClick={() => shiftPeriod(-1)} style={{ ...btnG, padding: "6px 10px" }}>←</button>
+            <div style={{ fontFamily: mono, fontSize: 12, fontWeight: 600, padding: "0 10px", minWidth: 220, textAlign: "center" }}>
+              {periodLabel}
+              {isViewingCurrent && <span style={{ marginLeft: 6, fontSize: 9, color: T.green, fontWeight: 700 }}>● CURRENT</span>}
+            </div>
+            <button onClick={() => shiftPeriod(1)} style={{ ...btnG, padding: "6px 10px" }}>→</button>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={jumpToPrevious} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: T.textMid }}>← {periodType === "week" ? "Last Week" : "Last Month"}</button>
-            <button onClick={jumpToCurrent} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: isViewingCurrent ? T.textLight : T.accent, borderColor: isViewingCurrent ? T.border : T.accent + "60", fontWeight: 600 }}>{periodType === "week" ? "This Week" : "This Month"}</button>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={jumpToPrevious} style={{ ...btnG, padding: "6px 10px", fontSize: 11 }}>{periodType === "week" ? "Last Week" : "Last Month"}</button>
+            <button onClick={jumpToCurrent} style={{ ...btnG, padding: "6px 10px", fontSize: 11, color: isViewingCurrent ? T.textLight : T.accent, borderColor: isViewingCurrent ? T.border : T.accent + "60" }}>{periodType === "week" ? "This Week" : "This Month"}</button>
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, letterSpacing: 1 }}>SCOPE:</span>
-            <select value={scope} onChange={e => setScope(e.target.value)} style={{ ...selectS, fontSize: 11, padding: "7px 10px", width: "auto" }}>
-              <option value="active">Active: {activeAccount?.name || "—"}</option>
-              <option value="all">All Accounts Combined</option>
+          <div style={{ marginLeft: "auto" }}>
+            <select value={scope} onChange={e => setScope(e.target.value)} style={{ ...selectS, fontSize: 11, padding: "6px 10px", width: "auto" }}>
+              <option value="active">Account: {activeAccount?.name || "—"}</option>
+              <option value="all">All Accounts</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
         </div>
-        {/* Trade count status row — shows where the trades are */}
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.borderLight}`, display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", fontSize: 11, fontFamily: mono, color: T.textMid }}>
-          <span style={{ color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontSize: 9 }}>Trade Counts:</span>
-          <button onClick={() => shiftPeriod(-1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: T.textMid, fontFamily: mono, fontSize: 11 }}>
-            ← Previous: <span style={{ color: neighborCounts.prev > 0 ? T.text : T.textLight, fontWeight: 600 }}>{neighborCounts.prev == null ? "…" : `${neighborCounts.prev} trade${neighborCounts.prev === 1 ? "" : "s"}`}</span>
-          </button>
-          <span>·</span>
-          <span>
-            Viewing: <span style={{ color: periodTrades.length > 0 ? T.accent : T.textLight, fontWeight: 700 }}>{periodTrades.length} trade{periodTrades.length === 1 ? "" : "s"}</span>
-            {isViewingCurrent && <span style={{ color: T.green, marginLeft: 6, fontWeight: 600 }}>· this {periodType === "week" ? "week" : "month"}</span>}
-          </span>
-          <span>·</span>
-          <button onClick={() => shiftPeriod(1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: T.textMid, fontFamily: mono, fontSize: 11 }}>
-            Next: <span style={{ color: neighborCounts.next > 0 ? T.text : T.textLight, fontWeight: 600 }}>{neighborCounts.next == null ? "…" : `${neighborCounts.next} trade${neighborCounts.next === 1 ? "" : "s"}`}</span> →
-          </button>
-        </div>
       </div>
 
-      {/* Period stats */}
-      <div style={{ ...cardS, padding: 18 }}>
-        <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 12 }}>
-          Period Stats · {scopeLabel}
+      {/* PERIOD STATS */}
+      {periodStats ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
+          <Stat label="Trades" value={periodStats.n} sub={`${periodStats.w}W / ${periodStats.l}L / ${periodStats.be}BE`} />
+          <Stat label="Win Rate" value={`${periodStats.wr.toFixed(0)}%`} color={periodStats.wr >= 50 ? T.green : T.red} />
+          <Stat label="PnL %" value={fP(periodStats.tPnl)} color={cP(periodStats.tPnl)} />
+          <Stat label="PnL $" value={fU(periodStats.tUsd)} color={cP(periodStats.tUsd)} />
+          <Stat label="Most Traded" value={periodStats.topPair ? periodStats.topPair[0] : "—"} sub={periodStats.topPair ? `${periodStats.topPair[1]}x` : ""} />
         </div>
-        {periodStats ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-            <Stat label="Trades" value={periodStats.n} sub={`${periodStats.w}W / ${periodStats.l}L / ${periodStats.be}BE`} />
-            <Stat label="Win Rate" value={`${periodStats.wr.toFixed(1)}%`} color={periodStats.wr >= 50 ? T.green : T.red} />
-            <Stat label="Total PnL %" value={fP(periodStats.tPnl)} color={cP(periodStats.tPnl)} />
-            <Stat label="Total PnL $" value={fU(periodStats.tUsd)} color={cP(periodStats.tUsd)} />
-            <Stat label="Best Trade" value={periodStats.best != null ? fP(periodStats.best) : "—"} color={T.green} />
-            <Stat label="Worst Trade" value={periodStats.worst != null ? fP(periodStats.worst) : "—"} color={T.red} />
-            <Stat label="Most Traded" value={periodStats.topPair ? periodStats.topPair[0] : "—"} sub={periodStats.topPair ? `${periodStats.topPair[1]} trades` : ""} />
-            {periodStats.mfeCount > 0 && (
-              <>
-                <Stat label="Capture Rate" value={periodStats.captureRate != null ? `${periodStats.captureRate.toFixed(0)}%` : "—"} color={periodStats.captureRate != null && periodStats.captureRate >= 60 ? T.green : periodStats.captureRate != null && periodStats.captureRate >= 40 ? T.amber : T.red} sub={`${periodStats.mfeCount} winner${periodStats.mfeCount === 1 ? "" : "s"} w/ MFE`} />
-                <Stat label="Left on Table" value={`-${periodStats.totalLeftOnTable.toFixed(2)}R`} color={T.red} sub="missed gains" />
-              </>
-            )}
+      ) : (
+        <div style={{ ...cardS, padding: 24, textAlign: "center", color: T.textLight, fontSize: 13 }}>No trades in this period. Use the reflection sections below for planning notes.</div>
+      )}
+
+      {/* REFLECTION 2x2 */}
+      <div style={{ ...cardS, padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Reflection</span>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {savedAt && <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Saved {new Date(savedAt).toLocaleString()}</span>}
+            <button onClick={saveRecap} disabled={saving} style={{ ...btnP, padding: "8px 18px", opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>{saving ? "Saving..." : justSaved ? "✓ Saved" : (recapId ? "Update" : "Save Recap")}</button>
           </div>
-        ) : (
-          <div style={{ color: T.textLight, fontSize: 13, padding: 20, textAlign: "center" }}>No trades in this period.</div>
-        )}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12 }}>
+          <div style={sectionStyle(T.green)}>
+            <div style={sectionLabel(T.green)}>✓ Positives</div>
+            <textarea value={recap.positives} onChange={e => setRecap({ ...recap, positives: e.target.value })} rows={7} placeholder="What went well — good setups, discipline followed, smart decisions, patience..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 150, background: T.cardAlt }} />
+          </div>
+          <div style={sectionStyle(T.blue)}>
+            <div style={sectionLabel(T.blue)}>◧ Technical</div>
+            <textarea value={recap.technical} onChange={e => setRecap({ ...recap, technical: e.target.value })} rows={7} placeholder="Chart observations — setups that worked or failed, levels respected, structure shifts, execution timing..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 150, background: T.cardAlt }} />
+          </div>
+          <div style={sectionStyle(T.purple)}>
+            <div style={sectionLabel(T.purple)}>◎ Fundamental</div>
+            <textarea value={recap.fundamental} onChange={e => setRecap({ ...recap, fundamental: e.target.value })} rows={7} placeholder="Macro thesis — central bank moves, data releases, positioning, narrative shifts..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 150, background: T.cardAlt }} />
+          </div>
+          <div style={sectionStyle(T.red)}>
+            <div style={sectionLabel(T.red)}>✕ Mistakes</div>
+            <textarea value={recap.mistakes} onChange={e => setRecap({ ...recap, mistakes: e.target.value })} rows={7} placeholder="What went wrong — broken rules, FOMO, revenge trades, sized too big, exited too early..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 150, background: T.cardAlt }} />
+          </div>
+        </div>
       </div>
 
-      {/* TRADE NOTES FROM PERIOD (NEW) */}
-      <div style={{ ...cardS, padding: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>
-            Trade Notes from this Period · {tradesWithNotes.length} trade{tradesWithNotes.length === 1 ? "" : "s"} with notes
-          </span>
-          {tradesWithNotes.length > 0 && (
-            <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={expandAll} style={{ ...btnG, fontSize: 10, padding: "4px 10px" }}>Expand All</button>
-              <button onClick={collapseAll} style={{ ...btnG, fontSize: 10, padding: "4px 10px" }}>Collapse All</button>
+      {/* COLLAPSIBLE TRADE NOTES */}
+      {tradesWithNotes.length > 0 && (
+        <div style={{ ...cardS, overflow: "hidden" }}>
+          <div onClick={() => setNotesOpen(!notesOpen)} style={{ padding: "14px 18px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: notesOpen ? `1px solid ${T.border}` : "none" }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: T.textMid, fontFamily: mono, letterSpacing: 0.5 }}>📋 Trade Notes from this Period · {tradesWithNotes.length} trade{tradesWithNotes.length === 1 ? "" : "s"}</span>
+            <span style={{ fontSize: 16, color: T.textMid, transform: notesOpen ? "rotate(90deg)" : "none", transition: "transform 150ms" }}>›</span>
+          </div>
+          {notesOpen && (
+            <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+              {tradesWithNotes.map(t => {
+                const open = !!expandedTrades[t.id];
+                return (
+                  <div key={t.id} style={{ background: T.cardAlt, borderRadius: 8, border: `1px solid ${T.borderLight}`, overflow: "hidden" }}>
+                    <div onClick={() => toggleTradeExpanded(t.id)} style={{ padding: "10px 12px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, minWidth: 70 }}>{t.date}</span>
+                        <Pill text={t.pair} type="pair" />
+                        <Pill text={t.direction} />
+                        <Pill text={t.result} />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
+                        <span style={{ fontSize: 11, color: T.amber }}>{"★".repeat(t.rating || 0)}</span>
+                        <span style={{ fontSize: 12, color: T.textMid, transform: open ? "rotate(90deg)" : "none", transition: "transform 150ms" }}>›</span>
+                      </div>
+                    </div>
+                    {open && (
+                      <div style={{ padding: "0 14px 14px 14px", display: "flex", flexDirection: "column", gap: 10, borderTop: `1px solid ${T.borderLight}` }}>
+                        {(t.notes_technical || "").trim() && (
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ fontSize: 9, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 4 }}>Technical</div>
+                            <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.55, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_technical}</div>
+                          </div>
+                        )}
+                        {(t.notes_fundamental || "").trim() && (
+                          <div>
+                            <div style={{ fontSize: 9, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 4 }}>Fundamental</div>
+                            <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.55, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_fundamental}</div>
+                          </div>
+                        )}
+                        {(t.notes_mistakes || "").trim() && (
+                          <div>
+                            <div style={{ fontSize: 9, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 4 }}>Mistakes</div>
+                            <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.55, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_mistakes}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
-        {tradesWithNotes.length === 0 ? (
-          <div style={{ color: T.textLight, fontSize: 13, padding: 24, textAlign: "center", fontStyle: "italic" }}>
-            {periodTrades.length === 0 ? "No trades in this period." : "No trades in this period have notes filled in."}
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {tradesWithNotes.map(t => {
-              const open = !!expandedTrades[t.id];
-              return (
-                <div key={t.id} style={{ background: T.cardAlt, borderRadius: 8, border: `1px solid ${T.borderLight}`, overflow: "hidden" }}>
-                  <div onClick={() => toggleTradeExpanded(t.id)} style={{ padding: "10px 12px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, minWidth: 70 }}>{t.date}</span>
-                      <Pill text={t.pair} type="pair" />
-                      <Pill text={t.direction} />
-                      <Pill text={t.result} />
-                      {t.session && <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{t.session}</span>}
-                      {t.bias_type && t.bias_type !== "None" && <span style={{ fontSize: 10, color: T.purple, fontFamily: mono }}>{t.bias_type}</span>}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
-                      <span style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>{fU(t.pnl_usd)}</span>
-                      <span style={{ fontSize: 11, color: T.amber }}>{"★".repeat(t.rating || 0)}</span>
-                      <span style={{ fontSize: 12, color: T.textMid, transform: open ? "rotate(90deg)" : "none", transition: "transform 150ms" }}>›</span>
-                    </div>
-                  </div>
-                  {open && (
-                    <div style={{ padding: "0 14px 14px 14px", display: "flex", flexDirection: "column", gap: 10, borderTop: `1px solid ${T.borderLight}` }}>
-                      {(() => {
-                        const real = realizedR(t);
-                        // For wins: show full Intended → Realized → MFE → Left on table breakdown
-                        // For losses/BE: show just Intended and Realized (no MFE row — that's noise)
-                        if (t.result === "Win") {
-                          const mfe = parseRR(t.max_r);
-                          if (mfe == null && real == null && !t.rr) return null;
-                          const left = (mfe != null && real != null) ? Math.max(0, mfe - real) : null;
-                          return (
-                            <div style={{ marginTop: 10, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6, display: "flex", gap: 14, flexWrap: "wrap", fontFamily: mono, fontSize: 11 }}>
-                              {t.rr && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Intended:</span> <span style={{ color: T.text, fontWeight: 600 }}>{t.rr}</span></span>}
-                              {real != null && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Realized:</span> <span style={{ color: cP(real), fontWeight: 600 }}>{real >= 0 ? "+" : ""}{real.toFixed(2)}R</span></span>}
-                              {mfe != null && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>MFE:</span> <span style={{ color: T.green, fontWeight: 600 }}>+{mfe.toFixed(2)}R</span></span>}
-                              {left != null && left > 0.1 && <span style={{ color: T.red, fontWeight: 700 }}>← left {left.toFixed(2)}R on table</span>}
-                              {left != null && left <= 0.1 && mfe > 0 && <span style={{ color: T.green, fontWeight: 700 }}>✓ captured fully</span>}
-                            </div>
-                          );
-                        }
-                        // Non-win: simple intended vs realized
-                        if (!t.rr && real == null) return null;
-                        return (
-                          <div style={{ marginTop: 10, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6, display: "flex", gap: 14, flexWrap: "wrap", fontFamily: mono, fontSize: 11 }}>
-                            {t.rr && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Intended:</span> <span style={{ color: T.text, fontWeight: 600 }}>{t.rr}</span></span>}
-                            {real != null && <span><span style={{ color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Realized:</span> <span style={{ color: cP(real), fontWeight: 600 }}>{real >= 0 ? "+" : ""}{real.toFixed(2)}R</span></span>}
-                          </div>
-                        );
-                      })()}
-                      {(t.notes_technical || "").trim() && (
-                        <div style={{ marginTop: 10 }}>
-                          <div style={{ fontSize: 9, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 4 }}>Technical</div>
-                          <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.55, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_technical}</div>
-                        </div>
-                      )}
-                      {(t.notes_fundamental || "").trim() && (
-                        <div>
-                          <div style={{ fontSize: 9, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 4 }}>Fundamental</div>
-                          <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.55, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_fundamental}</div>
-                        </div>
-                      )}
-                      {(t.notes_mistakes || "").trim() && (
-                        <div>
-                          <div style={{ fontSize: 9, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 4 }}>Mistakes</div>
-                          <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.55, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_mistakes}</div>
-                        </div>
-                      )}
-                      {(t.exec_link || t.bias_link) && (
-                        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-                          {t.exec_link && <a href={t.exec_link} target="_blank" rel="noreferrer" style={{ color: T.blue, fontSize: 10, textDecoration: "none", fontWeight: 600, fontFamily: mono }}>→ Chart</a>}
-                          {t.bias_link && <a href={t.bias_link} target="_blank" rel="noreferrer" style={{ color: T.purple, fontSize: 10, textDecoration: "none", fontWeight: 600, fontFamily: mono }}>→ Bias</a>}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      )}
 
-      {/* Reflection form */}
-      <div style={{ ...cardS, padding: 22 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>Reflection</span>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            {savedAt && <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Saved {new Date(savedAt).toLocaleString()}</span>}
-            <button onClick={saveRecap} disabled={saving} style={{ ...btnP, opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>{saving ? "Saving..." : justSaved ? "✓ Saved" : (recapId ? "Update Recap" : "Save Recap")}</button>
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-          <Field label="What worked? (setups, decisions, discipline)">
-            <textarea value={recap.worked_text} onChange={e => setRecap({ ...recap, worked_text: e.target.value })} rows={6} placeholder="Best decisions, setups that paid off, rules followed..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 130 }} />
-          </Field>
-          <Field label="What didn't work? (mistakes, broken rules, emotions)">
-            <textarea value={recap.didnt_work_text} onChange={e => setRecap({ ...recap, didnt_work_text: e.target.value })} rows={6} placeholder="Costly mistakes, rules broken, FOMO, revenge trades..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 130 }} />
-          </Field>
-          <Field label="Patterns recognized (good or bad)">
-            <textarea value={recap.pattern_text} onChange={e => setRecap({ ...recap, pattern_text: e.target.value })} rows={6} placeholder="Recurring behaviors, market patterns, setup tendencies..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 130 }} />
-          </Field>
-          <Field label="One thing to change next period">
-            <textarea value={recap.change_text} onChange={e => setRecap({ ...recap, change_text: e.target.value })} rows={6} placeholder="The single most important change to make..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 130 }} />
-          </Field>
-        </div>
-        <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono }}>Conviction for next period:</span>
-          <div style={{ display: "flex", gap: 4 }}>
-            {[1, 2, 3, 4, 5].map(r => (<button key={r} onClick={() => setRecap({ ...recap, conviction: r })} style={{ width: 36, height: 36, borderRadius: 6, border: `1px solid ${T.border}`, background: recap.conviction >= r ? T.accentBg : T.cardAlt, color: recap.conviction >= r ? T.accent : T.textLight, cursor: "pointer", fontSize: 16 }}>★</button>))}
-          </div>
-          <span style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>{["Low", "Cautious", "Neutral", "Confident", "Highest"][recap.conviction - 1]}</span>
-        </div>
-      </div>
-
-      {/* Past recaps */}
-      <div style={{ ...cardS, padding: 18 }}>
-        <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 12 }}>Past {periodType === "week" ? "Weekly" : "Monthly"} Recaps · {scopeLabel}</div>
+      {/* PAST RECAPS */}
+      <div style={{ ...cardS, padding: 16 }}>
+        <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 10 }}>Past {periodType === "week" ? "Weekly" : "Monthly"} Recaps · {scopeLabel}</div>
         {pastRecaps.length === 0 ? (
-          <div style={{ color: T.textLight, fontSize: 13, padding: 16, textAlign: "center" }}>No past recaps yet.</div>
+          <div style={{ color: T.textLight, fontSize: 13, padding: 12, textAlign: "center" }}>No past recaps yet.</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {pastRecaps.map(r => (
-              <div key={r.id} onClick={() => jumpTo(r)} style={{ cursor: "pointer", padding: "10px 12px", background: r.id === recapId ? T.accentBg : T.cardAlt, borderRadius: 8, border: r.id === recapId ? `1px solid ${T.accent}` : "1px solid transparent", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+              <div key={r.id} onClick={() => jumpTo(r)} style={{ cursor: "pointer", padding: "8px 12px", background: r.id === recapId ? T.accentBg : T.cardAlt, borderRadius: 6, border: r.id === recapId ? `1px solid ${T.accent}` : "1px solid transparent", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                 <div style={{ fontFamily: mono, fontSize: 12, fontWeight: 600 }}>{formatPeriodLabel(r.period_type, r.period_start)}</div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span style={{ fontSize: 10, color: T.amber }}>{"★".repeat(r.conviction || 0)}</span>
-                  <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>{new Date(r.updated_at || r.created_at).toLocaleDateString()}</span>
-                </div>
+                <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>{new Date(r.updated_at || r.created_at).toLocaleDateString()}</span>
               </div>
             ))}
           </div>
@@ -928,9 +703,6 @@ function RecapTab({ user, accounts, activeAccount }) {
   );
 }
 
-// ══════════════════════════════════════════
-// JOURNAL (MAIN)
-// ══════════════════════════════════════════
 function Journal({ user, onLogout }) {
   const [accounts, setAccounts] = useState([]);
   const [activeAccount, setActiveAccount] = useState(null);
@@ -954,30 +726,26 @@ function Journal({ user, onLogout }) {
   const [sortCol, setSortCol] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
   const [search, setSearch] = useState("");
+  const [exportingHTML, setExportingHTML] = useState(false);
 
-  // Load accounts + pairs on mount
   useEffect(() => {
     const loadAll = async () => {
       const { data: accData } = await supabase.from("accounts").select("*").order("created_at", { ascending: true });
       setAccounts(accData || []);
       if (accData && accData.length > 0) setActiveAccount(accData[0]);
       else setShowAccountModal(true);
-
       const { data: pairData } = await supabase.from("user_pairs").select("*").order("sort_order", { ascending: true });
-      if (pairData && pairData.length > 0) {
-        setPairs(pairData);
-      } else {
+      if (pairData && pairData.length > 0) setPairs(pairData);
+      else {
         const seedRows = DEFAULT_PAIRS.map((name, i) => ({ user_id: user.id, name, sort_order: i }));
         const { data: seeded } = await supabase.from("user_pairs").insert(seedRows).select();
         setPairs((seeded || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
       }
-
       setLoading(false);
     };
     loadAll();
   }, [user.id]);
 
-  // Load trades when active account changes
   useEffect(() => {
     if (!activeAccount) { setTrades([]); return; }
     const loadTrades = async () => {
@@ -995,7 +763,6 @@ function Journal({ user, onLogout }) {
     setAccounts(p => [...p, data]);
     if (!activeAccount) setActiveAccount(data);
   };
-
   const deleteAccount = async (id) => {
     if (!confirm("Delete this account and ALL its trades? Cannot undo.")) return;
     await supabase.from("accounts").delete().eq("id", id);
@@ -1003,13 +770,8 @@ function Journal({ user, onLogout }) {
     setAccounts(remaining);
     if (activeAccount?.id === id) setActiveAccount(remaining[0] || null);
   };
+  const selectAccount = (id) => { const a = accounts.find(x => x.id === id); if (a) { setActiveAccount(a); setShowAccountModal(false); } };
 
-  const selectAccount = (id) => {
-    const a = accounts.find(x => x.id === id);
-    if (a) { setActiveAccount(a); setShowAccountModal(false); }
-  };
-
-  // PAIR HANDLERS
   const addPair = async (name) => {
     if (pairs.some(p => p.name.toLowerCase() === name.toLowerCase())) { alert("That pair already exists."); return; }
     const nextOrder = pairs.length > 0 ? Math.max(...pairs.map(p => p.sort_order || 0)) + 1 : 0;
@@ -1060,7 +822,6 @@ function Journal({ user, onLogout }) {
     }
     setForm(emptyTrade()); setShowForm(false); setEditId(null);
   };
-
   const editTrade = t => { setForm({ ...t, risk: t.risk || 1, rating: t.rating || 3 }); setEditId(t.id); setShowForm(true); setTab("log"); };
   const deleteTrade = async id => {
     if (!confirm("Delete this trade?")) return;
@@ -1100,7 +861,220 @@ function Journal({ user, onLogout }) {
     XLSX.writeFile(wb, `varmari_FULL_BACKUP_${new Date().toISOString().split("T")[0]}.xlsx`);
   };
 
-  // Stats
+  // CHANGE #4: Self-contained HTML backup with embedded JSON for full restore
+  const exportHTMLBackup = async () => {
+    setExportingHTML(true);
+    try {
+      const [accRes, tradesRes, pairsRes, recapsRes] = await Promise.all([
+        supabase.from("accounts").select("*").order("created_at", { ascending: true }),
+        supabase.from("trades").select("*").order("date", { ascending: true }),
+        supabase.from("user_pairs").select("*").order("sort_order", { ascending: true }),
+        supabase.from("recaps").select("*").order("period_start", { ascending: false }),
+      ]);
+      const allAccounts = accRes.data || [];
+      const allTrades = tradesRes.data || [];
+      const allPairs = pairsRes.data || [];
+      const allRecaps = recapsRes.data || [];
+
+      const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const fmtPct = v => (v == null || v === "") ? "—" : `${v >= 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
+      const fmtUsd = v => (v == null || v === "") ? "—" : `${v >= 0 ? "+" : "−"}$${Math.abs(v).toFixed(2)}`;
+
+      const accountSections = allAccounts.map(acc => {
+        const accTrades = allTrades.filter(t => t.account_id === acc.id);
+        const accRecaps = allRecaps.filter(r => r.account_id === acc.id);
+        const totalPnl = accTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+        const totalUsd = accTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+        const wins = accTrades.filter(t => t.result === "Win").length;
+        const losses = accTrades.filter(t => t.result === "Loss").length;
+        const wr = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
+
+        const tradeRows = accTrades.map(t => `
+          <tr>
+            <td>${esc(t.date)}</td><td>${esc(t.day || '')}</td><td>${esc(t.session || '')}</td>
+            <td><b>${esc(t.pair)}</b></td><td>${esc(t.direction)}</td><td>${esc(t.risk)}%</td>
+            <td>${esc(t.entry)}</td><td>${esc(t.exit)}</td><td>${esc(t.rr || '—')}</td>
+            <td>${esc(t.max_r || '—')}</td>
+            <td class="pnl ${(t.pnl_pct || 0) >= 0 ? 'pos' : 'neg'}">${fmtPct(t.pnl_pct)}</td>
+            <td class="pnl ${(t.pnl_usd || 0) >= 0 ? 'pos' : 'neg'}">${fmtUsd(t.pnl_usd)}</td>
+            <td><span class="pill pill-${(t.result||'').toLowerCase()}">${esc(t.result)}</span></td>
+            <td>${esc(t.bias_type || '')}</td><td>${'★'.repeat(t.rating || 0)}</td>
+            <td class="notes-cell">
+              ${(t.notes_technical || '').trim() ? `<div class="note"><b>Tech:</b> ${esc(t.notes_technical)}</div>` : ''}
+              ${(t.notes_fundamental || '').trim() ? `<div class="note"><b>Fund:</b> ${esc(t.notes_fundamental)}</div>` : ''}
+              ${(t.notes_mistakes || '').trim() ? `<div class="note err"><b>Mistakes:</b> ${esc(t.notes_mistakes)}</div>` : ''}
+            </td>
+          </tr>`).join('');
+
+        const recapBlocks = accRecaps.map(r => `
+          <div class="recap">
+            <div class="recap-head">
+              <span class="recap-period">${r.period_type === 'week' ? '📅 Week' : '🗓️ Month'} starting ${esc(r.period_start)}</span>
+              <span class="recap-saved">Saved ${new Date(r.updated_at || r.created_at).toLocaleDateString()}</span>
+            </div>
+            <div class="recap-grid">
+              ${r.worked_text ? `<div class="rsec rsec-pos"><div class="rsec-label">✓ Positives</div><div class="rsec-body">${esc(r.worked_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+              ${r.didnt_work_text ? `<div class="rsec rsec-tech"><div class="rsec-label">◧ Technical</div><div class="rsec-body">${esc(r.didnt_work_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+              ${r.pattern_text ? `<div class="rsec rsec-fund"><div class="rsec-label">◎ Fundamental</div><div class="rsec-body">${esc(r.pattern_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+              ${r.change_text ? `<div class="rsec rsec-mist"><div class="rsec-label">✕ Mistakes</div><div class="rsec-body">${esc(r.change_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+            </div>
+          </div>`).join('');
+
+        return `
+          <section class="account">
+            <div class="acc-head">
+              <h2>${esc(acc.name)}</h2>
+              <div class="acc-stats">
+                <span>Start: <b>$${(acc.starting_balance || 0).toLocaleString()}</b></span>
+                <span>Trades: <b>${accTrades.length}</b></span>
+                <span>WR: <b>${wr.toFixed(0)}%</b></span>
+                <span>PnL: <b class="${totalPnl >= 0 ? 'pos' : 'neg'}">${fmtPct(totalPnl)}</b></span>
+                <span>PnL$: <b class="${totalUsd >= 0 ? 'pos' : 'neg'}">${fmtUsd(totalUsd)}</b></span>
+                <span>Balance: <b>$${((acc.starting_balance || 0) + totalUsd).toFixed(2)}</b></span>
+              </div>
+            </div>
+            ${accTrades.length === 0 ? '<p class="empty">No trades in this account.</p>' : `
+              <h3>Trades (${accTrades.length})</h3>
+              <div class="table-wrap">
+                <table class="trades">
+                  <thead><tr>
+                    <th>Date</th><th>Day</th><th>Session</th><th>Pair</th><th>Dir</th><th>Risk</th>
+                    <th>Entry</th><th>Exit</th><th>R:R</th><th>Max R</th><th>PnL %</th><th>PnL $</th>
+                    <th>Result</th><th>Bias</th><th>★</th><th>Notes</th>
+                  </tr></thead>
+                  <tbody>${tradeRows}</tbody>
+                </table>
+              </div>`}
+            ${accRecaps.length > 0 ? `<h3>Recaps (${accRecaps.length})</h3>${recapBlocks}` : ''}
+          </section>`;
+      }).join('');
+
+      const sharedRecaps = allRecaps.filter(r => r.account_id == null);
+      const sharedRecapBlocks = sharedRecaps.length === 0 ? '' : `
+        <section class="account">
+          <div class="acc-head"><h2>Cross-Account Recaps</h2></div>
+          ${sharedRecaps.map(r => `
+            <div class="recap">
+              <div class="recap-head">
+                <span class="recap-period">${r.period_type === 'week' ? '📅 Week' : '🗓️ Month'} starting ${esc(r.period_start)}</span>
+                <span class="recap-saved">Saved ${new Date(r.updated_at || r.created_at).toLocaleDateString()}</span>
+              </div>
+              <div class="recap-grid">
+                ${r.worked_text ? `<div class="rsec rsec-pos"><div class="rsec-label">✓ Positives</div><div class="rsec-body">${esc(r.worked_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+                ${r.didnt_work_text ? `<div class="rsec rsec-tech"><div class="rsec-label">◧ Technical</div><div class="rsec-body">${esc(r.didnt_work_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+                ${r.pattern_text ? `<div class="rsec rsec-fund"><div class="rsec-label">◎ Fundamental</div><div class="rsec-body">${esc(r.pattern_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+                ${r.change_text ? `<div class="rsec rsec-mist"><div class="rsec-label">✕ Mistakes</div><div class="rsec-body">${esc(r.change_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+              </div>
+            </div>`).join('')}
+        </section>`;
+
+      const fullDataJSON = JSON.stringify({
+        exported_at: new Date().toISOString(), version: 1,
+        accounts: allAccounts, trades: allTrades, pairs: allPairs, recaps: allRecaps,
+      }, null, 2);
+
+      const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Varmari Backup · ${new Date().toLocaleDateString()}</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F5F0E8; color: #2C2418; margin: 0; padding: 24px; line-height: 1.5; }
+.container { max-width: 1400px; margin: 0 auto; }
+h1 { font-size: 28px; margin: 0 0 4px 0; } h2 { font-size: 20px; margin: 0; }
+h3 { font-size: 14px; color: #6B5D4F; text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 10px 0; }
+.header { background: #2C2418; color: #fff; padding: 18px 24px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.header .meta { font-size: 12px; color: rgba(255,255,255,0.7); font-family: 'Courier New', monospace; }
+.summary { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 20px; border: 1px solid #E8E0D4; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.summary-grid div { padding: 10px; background: #FAF8F4; border-radius: 8px; }
+.summary-grid .label { font-size: 10px; color: #9C8E7E; text-transform: uppercase; letter-spacing: 1px; }
+.summary-grid .value { font-size: 20px; font-weight: 700; color: #2C2418; font-family: 'Courier New', monospace; margin-top: 4px; }
+.account { background: #fff; border: 1px solid #E8E0D4; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.acc-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid #E8E0D4; }
+.acc-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #6B5D4F; font-family: 'Courier New', monospace; }
+.pos { color: #1A8754; } .neg { color: #C4342A; }
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #E8E0D4; }
+table.trades { width: 100%; border-collapse: collapse; font-size: 11px; font-family: 'Courier New', monospace; }
+table.trades th { background: #FAF8F4; padding: 8px 6px; text-align: left; border-bottom: 1px solid #E8E0D4; font-size: 9px; text-transform: uppercase; color: #9C8E7E; letter-spacing: 0.5px; white-space: nowrap; }
+table.trades td { padding: 7px 6px; border-bottom: 1px solid #F0EBE3; vertical-align: top; }
+table.trades tr:nth-child(even) td { background: #FAF8F4; }
+table.trades .pnl { font-weight: 600; }
+.pill { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.pill-win { background: #E8F5EE; color: #1A8754; } .pill-loss { background: #FDF0EF; color: #C4342A; } .pill-breakeven { background: #FAF8F4; color: #6B5D4F; }
+.notes-cell { max-width: 280px; }
+.notes-cell .note { font-size: 10px; padding: 4px 6px; background: #fff; margin: 2px 0; border-left: 2px solid #2563EB; border-radius: 3px; line-height: 1.4; word-break: break-word; }
+.notes-cell .note.err { border-left-color: #C4342A; }
+.recap { background: #FAF8F4; border: 1px solid #E8E0D4; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+.recap-head { display: flex; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid #E8E0D4; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.recap-period { font-weight: 600; font-size: 13px; }
+.recap-saved { font-size: 10px; color: #9C8E7E; font-family: 'Courier New', monospace; }
+.recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.rsec { background: #fff; border-radius: 8px; padding: 12px; border-top: 3px solid #ccc; }
+.rsec-pos { border-top-color: #1A8754; } .rsec-tech { border-top-color: #2563EB; } .rsec-fund { border-top-color: #7C3AED; } .rsec-mist { border-top-color: #C4342A; }
+.rsec-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.rsec-pos .rsec-label { color: #1A8754; } .rsec-tech .rsec-label { color: #2563EB; } .rsec-fund .rsec-label { color: #7C3AED; } .rsec-mist .rsec-label { color: #C4342A; }
+.rsec-body { font-size: 12px; line-height: 1.5; color: #2C2418; }
+.empty { color: #9C8E7E; font-style: italic; padding: 12px 0; }
+.footer { text-align: center; padding: 30px 0 10px 0; color: #9C8E7E; font-size: 11px; font-family: 'Courier New', monospace; }
+.restore-section { background: #fff; border: 2px dashed #C47A3B; border-radius: 12px; padding: 20px; margin: 20px 0; }
+.restore-section h2 { color: #C47A3B; margin-bottom: 8px; font-size: 16px; }
+.restore-section p { font-size: 13px; color: #6B5D4F; margin: 6px 0; }
+.restore-section button { background: #C47A3B; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-right: 8px; margin-top: 8px; font-size: 13px; }
+.restore-section button:hover { background: #a86530; }
+details { margin-top: 12px; } details summary { cursor: pointer; font-size: 12px; color: #6B5D4F; padding: 6px 0; }
+details pre { background: #2C2418; color: #E8F5EE; padding: 14px; border-radius: 8px; font-size: 10px; overflow-x: auto; max-height: 400px; }
+</style></head><body>
+<div class="container">
+  <div class="header">
+    <div><h1>VARMARI · Full Backup</h1><div class="meta">Exported ${new Date().toLocaleString()} · User: ${esc(user.email || user.id)}</div></div>
+    <div class="meta">${allAccounts.length} accounts · ${allTrades.length} trades · ${allRecaps.length} recaps</div>
+  </div>
+  <div class="restore-section">
+    <h2>⚠️ How to restore from this backup</h2>
+    <p><b>This file is a complete frozen snapshot of your trading data.</b> Open it in any browser to read everything.</p>
+    <p>If your live website ever breaks, the embedded JSON below contains every record. Send this file to whoever rebuilds your app — they can reload all data into Supabase from it.</p>
+    <button onclick="copyJSON()">📋 Copy Full Data as JSON</button>
+    <button onclick="downloadJSON()">💾 Download JSON file</button>
+    <details><summary>Show raw JSON data</summary><pre id="json-data">${esc(fullDataJSON)}</pre></details>
+  </div>
+  <div class="summary"><div class="summary-grid">
+    <div><div class="label">Accounts</div><div class="value">${allAccounts.length}</div></div>
+    <div><div class="label">Total Trades</div><div class="value">${allTrades.length}</div></div>
+    <div><div class="label">Total Recaps</div><div class="value">${allRecaps.length}</div></div>
+    <div><div class="label">Pairs Tracked</div><div class="value">${allPairs.length}</div></div>
+  </div></div>
+  ${accountSections}${sharedRecapBlocks}
+  <div class="footer">VARMARI · Self-contained backup · Open this file anytime to view your trading history</div>
+</div>
+<script>
+const FULL_DATA = ${fullDataJSON};
+function copyJSON() {
+  navigator.clipboard.writeText(JSON.stringify(FULL_DATA, null, 2)).then(() => {
+    alert('JSON copied. ' + FULL_DATA.trades.length + ' trades, ' + FULL_DATA.recaps.length + ' recaps.');
+  });
+}
+function downloadJSON() {
+  const blob = new Blob([JSON.stringify(FULL_DATA, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'varmari_data_${new Date().toISOString().split('T')[0]}.json';
+  a.click(); URL.revokeObjectURL(url);
+}
+</script></body></html>`;
+
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `varmari_FULL_BACKUP_${new Date().toISOString().split("T")[0]}.html`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("HTML backup failed: " + err.message);
+    } finally {
+      setExportingHTML(false);
+    }
+  };
+
   const S = useMemo(() => {
     if (!activeAccount || !trades.length) return null;
     const base = activeAccount.starting_balance;
@@ -1116,14 +1090,10 @@ function Journal({ user, onLogout }) {
     const worst = Math.min(...trades.map(t => parseFloat(t.pnl_pct) || 0));
     let streak = 0, maxS = 0;
     [...trades].sort((a, b) => a.date.localeCompare(b.date)).forEach(t => { if (t.result === "Win") { streak++; maxS = Math.max(maxS, streak); } else streak = 0; });
-
     const day = {}; DAYS_W.forEach(d => { day[d] = { n: 0, w: 0, l: 0, be: 0, pnl: 0 }; });
     trades.forEach(t => { if (day[t.day]) { day[t.day].n++; if (t.result === "Win") day[t.day].w++; else if (t.result === "Loss") day[t.day].l++; else day[t.day].be++; day[t.day].pnl += parseFloat(t.pnl_pct) || 0; } });
-
     const sess = {}; SESSIONS.forEach(s => { sess[s] = { n: 0, w: 0, l: 0, pnl: 0 }; });
     trades.forEach(t => { if (sess[t.session]) { sess[t.session].n++; if (t.result === "Win") sess[t.session].w++; else if (t.result === "Loss") sess[t.session].l++; sess[t.session].pnl += parseFloat(t.pnl_pct) || 0; } });
-
-    // Build pair map dynamically — include any pair with trades, even legacy ones not in current list
     const pair = {};
     pairNames.forEach(p => { if (!pair[p]) pair[p] = { n: 0, w: 0, l: 0, be: 0, pnl: 0, usd: 0 }; });
     trades.forEach(t => {
@@ -1136,20 +1106,14 @@ function Journal({ user, onLogout }) {
       pair[t.pair].pnl += parseFloat(t.pnl_pct) || 0;
       pair[t.pair].usd += parseFloat(t.pnl_usd) || 0;
     });
-
     const dir = { Long: { n: 0, w: 0, l: 0, pnl: 0 }, Short: { n: 0, w: 0, l: 0, pnl: 0 } };
     trades.forEach(t => { if (dir[t.direction]) { dir[t.direction].n++; if (t.result === "Win") dir[t.direction].w++; else if (t.result === "Loss") dir[t.direction].l++; dir[t.direction].pnl += parseFloat(t.pnl_pct) || 0; } });
-
     const mo = {};
     trades.forEach(t => { const m = t.date?.substring(0, 7); if (m) { if (!mo[m]) mo[m] = { n: 0, w: 0, l: 0, pnl: 0, usd: 0 }; mo[m].n++; if (t.result === "Win") mo[m].w++; else if (t.result === "Loss") mo[m].l++; mo[m].pnl += parseFloat(t.pnl_pct) || 0; mo[m].usd += parseFloat(t.pnl_usd) || 0; } });
-
-    // Equity curve + drawdown
     const sorted = [...trades].sort((a, b) => a.date.localeCompare(b.date));
     let bal = base;
     const eq = [{ date: "Start", balance: base }];
-    let peak = base;
-    let maxDD = 0, maxDDpct = 0;
-    let lastPeakDate = "Start";
+    let peak = base, maxDD = 0, maxDDpct = 0, lastPeakDate = "Start";
     sorted.forEach(t => {
       bal += parseFloat(t.pnl_usd) || 0;
       eq.push({ date: t.date, balance: Math.round(bal * 100) / 100 });
@@ -1166,16 +1130,8 @@ function Journal({ user, onLogout }) {
       const peakD = new Date(lastPeakDate + "T12:00:00");
       daysSincePeak = Math.max(0, Math.floor((today - peakD) / (1000 * 60 * 60 * 24)));
     }
-
-    // Cumulative R curve
-    let cumR = 0;
-    const rCurve = [{ date: "Start", r: 0 }];
-    sorted.forEach(t => { const r = realizedR(t); if (r != null) { cumR += r; rCurve.push({ date: t.date, r: Math.round(cumR * 100) / 100 }); } });
-    const totalR = cumR;
-
-    // By rating
     const byRating = {};
-    [1,2,3,4,5].forEach(r => { byRating[r] = { n: 0, w: 0, l: 0, pnl: 0, sumR: 0, rCount: 0 }; });
+    [1,2,3,4,5].forEach(r => { byRating[r] = { n: 0, w: 0, l: 0, pnl: 0 }; });
     trades.forEach(t => {
       const r = t.rating || 0;
       if (byRating[r]) {
@@ -1183,39 +1139,18 @@ function Journal({ user, onLogout }) {
         if (t.result === "Win") byRating[r].w++;
         else if (t.result === "Loss") byRating[r].l++;
         byRating[r].pnl += parseFloat(t.pnl_pct) || 0;
-        const rR = realizedR(t);
-        if (rR != null) { byRating[r].sumR += rR; byRating[r].rCount++; }
       }
     });
-
-    // R distribution
     const rValues = trades.map(realizedR).filter(v => v != null);
-    const buckets = [
-      { label: "≤ -2R", min: -Infinity, max: -2, count: 0 },
-      { label: "-2 to -1R", min: -2, max: -1, count: 0 },
-      { label: "-1 to 0R", min: -1, max: 0, count: 0 },
-      { label: "0 to 1R", min: 0, max: 1, count: 0 },
-      { label: "1 to 2R", min: 1, max: 2, count: 0 },
-      { label: "2 to 3R", min: 2, max: 3, count: 0 },
-      { label: "≥ 3R", min: 3, max: Infinity, count: 0 },
-    ];
-    rValues.forEach(v => {
-      if (v === 0) { buckets[3].count++; return; }
-      for (const b of buckets) { if (v > b.min && v <= b.max) { b.count++; break; } }
-    });
     const intendedRs = trades.map(t => parseRR(t.rr)).filter(v => v != null);
     const avgIntendedR = intendedRs.length ? intendedRs.reduce((s,v) => s+v, 0) / intendedRs.length : null;
     const avgRealizedR = rValues.length ? rValues.reduce((s,v) => s+v, 0) / rValues.length : null;
-
-    // MFE / Exit Quality — only for WINNING trades where max_r was filled in
-    // (MFE on losers is noise — the question we're answering is "did I close winners too early")
     const mfeTrades = trades.filter(t => t.result === "Win").map(t => {
       const mfe = parseRR(t.max_r);
       const realized = realizedR(t);
       if (mfe == null || realized == null) return null;
       return { id: t.id, date: t.date, pair: t.pair, direction: t.direction, result: t.result, mfe, realized, leftOnTable: Math.max(0, mfe - realized) };
     }).filter(x => x != null);
-
     let exitQuality = null;
     const totalWins = trades.filter(t => t.result === "Win").length;
     if (mfeTrades.length > 0) {
@@ -1224,27 +1159,13 @@ function Journal({ user, onLogout }) {
       const totalLeftOnTable = mfeTrades.reduce((s, x) => s + x.leftOnTable, 0);
       const avgMFE = totalMFE / mfeTrades.length;
       const avgRealized2 = totalRealized / mfeTrades.length;
-      // Capture rate: realized R as % of MFE — across all logged winners
       const captureRate = totalMFE > 0 ? (totalRealized / totalMFE) * 100 : null;
-      // Worst "left on table" — top 5 winners where MFE - realized was biggest
       const worstLeft = [...mfeTrades].sort((a, b) => b.leftOnTable - a.leftOnTable).slice(0, 5).filter(x => x.leftOnTable > 0.1);
-      exitQuality = {
-        n: mfeTrades.length,
-        coverage: totalWins > 0 ? (mfeTrades.length / totalWins) * 100 : 0,
-        avgMFE,
-        avgRealized: avgRealized2,
-        captureRate,
-        totalLeftOnTable,
-        worstLeft,
-      };
+      exitQuality = { n: mfeTrades.length, coverage: totalWins > 0 ? (mfeTrades.length / totalWins) * 100 : 0, avgMFE, avgRealized: avgRealized2, captureRate, totalLeftOnTable, worstLeft };
     }
-
     const yMin = Math.round(base * 0.88);
     const yMax = Math.round(base * 1.30);
-
-    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base,
-      maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak,
-      rCurve, totalR, byRating, buckets, avgIntendedR, avgRealizedR, exitQuality };
+    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, byRating, avgIntendedR, avgRealizedR, exitQuality };
   }, [trades, activeAccount, pairNames]);
 
   const filtered = useMemo(() => {
@@ -1263,7 +1184,6 @@ function Journal({ user, onLogout }) {
 
   const clearFilters = () => { setFPair("All"); setFResult("All"); setFDay("All"); setFSess("All"); setFDir("All"); setFBias("All"); setFRating("All"); setSearch(""); };
   const hasActiveFilters = fPair !== "All" || fResult !== "All" || fDay !== "All" || fSess !== "All" || fDir !== "All" || fBias !== "All" || fRating !== "All" || search !== "";
-
   const toggleSort = col => { if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol(col); setSortDir("desc"); } };
 
   const tabs = [
@@ -1273,7 +1193,6 @@ function Journal({ user, onLogout }) {
     { k: "monthly", l: "Monthly", i: "▣" },
     { k: "recap", l: "Recap", i: "✎" },
   ];
-
   const navStyle = (active) => ({
     background: "none", border: "none", color: active ? "#fff" : "rgba(255,255,255,0.5)",
     padding: "10px 16px", fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer",
@@ -1285,8 +1204,6 @@ function Journal({ user, onLogout }) {
   return (
     <div style={{ background: T.bg, minHeight: "100vh", fontFamily: font, color: T.text }}>
       <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-
-      {/* Top Nav */}
       <div style={{ background: T.headerBg, padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 0" }}>
@@ -1301,9 +1218,7 @@ function Journal({ user, onLogout }) {
         <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "10px 0", flexWrap: "wrap" }}>
           {page === "journal" && activeAccount && (
             <>
-              <button onClick={() => setShowPairsModal(true)} title="Manage Pairs" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: mono, cursor: "pointer" }}>
-                ⟡ Pairs ({pairs.length})
-              </button>
+              <button onClick={() => setShowPairsModal(true)} title="Manage Pairs" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: mono, cursor: "pointer" }}>⟡ Pairs ({pairs.length})</button>
               <button onClick={() => setShowAccountModal(true)} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: mono, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ color: T.accent }}>●</span> {activeAccount.name} <span style={{ color: "rgba(255,255,255,0.5)" }}>▼</span>
               </button>
@@ -1327,27 +1242,22 @@ function Journal({ user, onLogout }) {
 
       {page === "journal" && activeAccount && (
         <>
-          {/* Sub-header */}
           <div style={{ display: "flex", gap: 8, padding: "12px 20px", alignItems: "center", flexWrap: "wrap", borderBottom: `1px solid ${T.border}`, background: T.card }}>
             <div style={{ display: "flex", gap: 0, flexWrap: "wrap" }}>
               {tabs.map(t => (
-                <button key={t.k} onClick={() => setTab(t.k)} style={{
-                  background: "none", border: "none", color: tab === t.k ? T.accent : T.textLight,
-                  padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font,
-                  borderBottom: tab === t.k ? `2px solid ${T.accent}` : "2px solid transparent",
-                }}><span style={{ fontSize: 13, marginRight: 4 }}>{t.i}</span>{t.l}</button>
+                <button key={t.k} onClick={() => setTab(t.k)} style={{ background: "none", border: "none", color: tab === t.k ? T.accent : T.textLight, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font, borderBottom: tab === t.k ? `2px solid ${T.accent}` : "2px solid transparent" }}><span style={{ fontSize: 13, marginRight: 4 }}>{t.i}</span>{t.l}</button>
               ))}
             </div>
             <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={{ ...btnP, fontSize: 11, padding: "6px 14px" }}>+ New Trade</button>
               <button onClick={exportExcel} style={{ ...btnG, fontSize: 10, padding: "5px 10px" }}>Export Excel</button>
-              <button onClick={exportAllBackup} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.accent, borderColor: T.accent + "60" }}>⬇ Full Backup</button>
+              <button onClick={exportAllBackup} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.accent, borderColor: T.accent + "60" }}>⬇ Excel Backup</button>
+              <button onClick={exportHTMLBackup} disabled={exportingHTML} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.green, borderColor: T.green + "60", opacity: exportingHTML ? 0.6 : 1 }}>{exportingHTML ? "Building..." : "⬇ HTML Backup"}</button>
             </div>
           </div>
 
           <div style={{ padding: "20px", maxWidth: 1280, margin: "0 auto" }}>
 
-            {/* DASHBOARD */}
             {tab === "dashboard" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {!S ? (
@@ -1372,16 +1282,12 @@ function Journal({ user, onLogout }) {
                     <Stat icon="✦" label="Worst" value={fP(S.worst)} color={T.red} />
                     <Stat icon="◆" label="Balance" value={`$${(S.base + S.tUsd).toFixed(0)}`} color={T.accent} sub={`Streak: ${S.maxS}`} />
                   </div>
-
-                  {/* Risk row */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 10 }}>
                     <Stat icon="▼" label="Max Drawdown" value={fU(-S.maxDD)} color={T.red} sub={`${S.maxDDpct.toFixed(1)}% from peak`} />
                     <Stat icon="◊" label="Current DD" value={S.currentDD > 0.01 ? fU(-S.currentDD) : "—"} color={S.currentDD > 0.01 ? T.red : T.green} sub={S.currentDD > 0.01 ? `${S.currentDDpct.toFixed(1)}% off peak` : "At peak"} />
                     <Stat icon="◷" label="Days Since Peak" value={S.daysSincePeak} sub={S.daysSincePeak === 0 ? "New peak today" : "days"} />
                     <Stat icon="≈" label="Avg Intended RR" value={S.avgIntendedR != null ? `1:${S.avgIntendedR.toFixed(2)}` : "—"} sub={S.avgRealizedR != null ? `Realized ${S.avgRealizedR >= 0 ? "+" : ""}${S.avgRealizedR.toFixed(2)}R` : "—"} />
                   </div>
-
-                  {/* Equity */}
                   <div style={{ ...cardS, padding: 18 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                       <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Equity Curve</span>
@@ -1399,8 +1305,6 @@ function Journal({ user, onLogout }) {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
-
-                  {/* Performance by Rating */}
                   <div style={{ ...cardS, padding: 18 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                       <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Performance by Rating</span>
@@ -1432,8 +1336,6 @@ function Journal({ user, onLogout }) {
                       </table>
                     </div>
                   </div>
-
-                  {/* Exit Quality (MFE) — NEW — winners only */}
                   <div style={{ ...cardS, padding: 18 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                       <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Exit Quality (Winners Only)</span>
@@ -1441,8 +1343,8 @@ function Journal({ user, onLogout }) {
                     </div>
                     {!S.exitQuality ? (
                       <div style={{ color: T.textLight, fontSize: 12, padding: 20, textAlign: "center", lineHeight: 1.6 }}>
-                        On your winning trades, fill in the <strong>"Max R Reached"</strong> field to see exit quality stats.<br />
-                        <span style={{ fontSize: 11, opacity: 0.7 }}>Tracks the gap between how far each winner went vs. where you actually exited.</span>
+                        On winning trades, fill in <strong>"Max R Reached"</strong> to see exit quality stats.<br />
+                        <span style={{ fontSize: 11, opacity: 0.7 }}>Tracks gap between how far each winner went vs. where you exited.</span>
                       </div>
                     ) : (<>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
@@ -1452,12 +1354,9 @@ function Journal({ user, onLogout }) {
                         <Stat icon="✕" label="Left on Table" value={`-${S.exitQuality.totalLeftOnTable.toFixed(2)}R`} color={T.red} sub="total across trades" />
                         <Stat icon="◧" label="Coverage" value={`${S.exitQuality.coverage.toFixed(0)}%`} sub={`${S.exitQuality.n} of ${S.w} wins logged`} />
                       </div>
-
                       {S.exitQuality.worstLeft.length > 0 && (
                         <>
-                          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>
-                            Biggest Misses · Trades where you exited furthest from peak
-                          </div>
+                          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Biggest Misses · Trades where you exited furthest from peak</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             {S.exitQuality.worstLeft.map(t => {
                               const pct = (t.leftOnTable / t.mfe) * 100;
@@ -1484,8 +1383,6 @@ function Journal({ user, onLogout }) {
                       )}
                     </>)}
                   </div>
-
-                  {/* Day + Session */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
                     <div style={{ ...cardS, padding: 18 }}>
                       <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 12 }}>By Day</div>
@@ -1512,8 +1409,6 @@ function Journal({ user, onLogout }) {
                       ); })}
                     </div>
                   </div>
-
-                  {/* Direction + Monthly */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
                     <div style={{ ...cardS, padding: 18 }}>
                       <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 12 }}>Direction</div>
@@ -1543,8 +1438,6 @@ function Journal({ user, onLogout }) {
                       ) : <div style={{ color: T.textLight, fontSize: 12, textAlign: "center", padding: 20 }}>No data</div>}
                     </div>
                   </div>
-
-                  {/* Recent */}
                   <div style={{ ...cardS, padding: 18 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                       <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Recent Trades</span>
@@ -1567,7 +1460,6 @@ function Journal({ user, onLogout }) {
               </div>
             )}
 
-            {/* TRADE LOG */}
             {tab === "log" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {showForm && (
@@ -1617,8 +1509,6 @@ function Journal({ user, onLogout }) {
                     </div>
                   </div>
                 )}
-
-                {/* Filters bar — expanded */}
                 <div style={{ ...cardS, padding: 12 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                     <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ ...inputS, width: 160, fontSize: 11, padding: "7px 10px" }} />
@@ -1636,7 +1526,6 @@ function Journal({ user, onLogout }) {
                     </div>
                   </div>
                 </div>
-
                 <div style={{ ...cardS, overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono }}>
                     <thead><tr style={{ background: T.cardAlt }}>
@@ -1683,7 +1572,6 @@ function Journal({ user, onLogout }) {
               </div>
             )}
 
-            {/* PAIRS */}
             {tab === "pairs" && S && (() => {
               const active = Object.keys(S.pair).filter(p => S.pair[p].n > 0).sort((a, b) => S.pair[b].pnl - S.pair[a].pnl);
               return (
@@ -1730,7 +1618,6 @@ function Journal({ user, onLogout }) {
             })()}
             {tab === "pairs" && !S && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No data yet</div>}
 
-            {/* MONTHLY */}
             {tab === "monthly" && S && Object.keys(S.mo).length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {Object.keys(S.mo).sort().reverse().map(m => { const mm = S.mo[m]; const wr = mm.w / (mm.w + mm.l || 1) * 100; const monthTrades = trades.filter(t => t.date?.startsWith(m)).sort((a, b) => a.date.localeCompare(b.date)); return (
@@ -1746,12 +1633,7 @@ function Journal({ user, onLogout }) {
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                       {monthTrades.map(t => (
-                        <div key={t.id} title={`${t.date} ${t.pair} ${t.direction} ${fP(t.pnl_pct)}`} onClick={() => editTrade(t)} style={{
-                          width: 30, height: 30, borderRadius: 6, ...center, fontSize: 8, fontFamily: mono, fontWeight: 600, cursor: "pointer",
-                          background: t.result === "Win" ? T.greenBg : t.result === "Loss" ? T.redBg : T.cardAlt,
-                          color: t.result === "Win" ? T.green : t.result === "Loss" ? T.red : T.textMid,
-                          border: `1px solid ${t.result === "Win" ? T.green + "30" : t.result === "Loss" ? T.red + "30" : T.border}`,
-                        }}>{t.date.split("-")[2]}</div>
+                        <div key={t.id} title={`${t.date} ${t.pair} ${t.direction} ${fP(t.pnl_pct)}`} onClick={() => editTrade(t)} style={{ width: 30, height: 30, borderRadius: 6, ...center, fontSize: 8, fontFamily: mono, fontWeight: 600, cursor: "pointer", background: t.result === "Win" ? T.greenBg : t.result === "Loss" ? T.redBg : T.cardAlt, color: t.result === "Win" ? T.green : t.result === "Loss" ? T.red : T.textMid, border: `1px solid ${t.result === "Win" ? T.green + "30" : t.result === "Loss" ? T.red + "30" : T.border}` }}>{t.date.split("-")[2]}</div>
                       ))}
                     </div>
                   </div>
@@ -1759,7 +1641,6 @@ function Journal({ user, onLogout }) {
               </div>
             ) : tab === "monthly" && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No monthly data</div>}
 
-            {/* RECAP TAB */}
             {tab === "recap" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} />}
 
           </div>
@@ -1773,13 +1654,9 @@ function Journal({ user, onLogout }) {
   );
 }
 
-// ══════════════════════════════════════════
-// MAIN APP
-// ══════════════════════════════════════════
 export default function App() {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(true);
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user || null);
@@ -1790,9 +1667,7 @@ export default function App() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
-
   const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); };
-
   if (checking) return <div style={{ minHeight: "100vh", background: T.bg, ...center, color: T.textMid, fontFamily: mono }}>Loading...</div>;
   if (!user) return <LoginScreen onLogin={setUser} />;
   return <Journal user={user} onLogout={handleLogout} />;
