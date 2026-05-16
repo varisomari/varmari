@@ -108,9 +108,10 @@ const emptyTrade = () => ({
   notes_technical: "", notes_fundamental: "", notes_mistakes: "",
 });
 
-// CHANGE #2: 4 sections renamed. Mapped to old DB columns so NO Supabase changes needed:
-// positives→worked_text, technical→didnt_work_text, fundamental→pattern_text, mistakes→change_text
-const emptyRecap = () => ({ positives: "", technical: "", fundamental: "", mistakes: "" });
+// Recap = 2 fields: positives (green) + negatives (red).
+// Mapped to existing DB columns: positives → worked_text, negatives → didnt_work_text
+// (pattern_text + change_text stay empty; old data still loads if present)
+const emptyRecap = () => ({ positives: "", negatives: "" });
 
 const cardS = { background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, overflow: "hidden" };
 const inputS = {
@@ -466,11 +467,15 @@ function RecapTab({ user, accounts, activeAccount }) {
       const { data: rRows } = await rq;
       const rRow = rRows && rRows.length > 0 ? rRows[0] : null;
       if (rRow) {
+        // Merge old 4-field data into 2-field structure: pattern_text + change_text fold into negatives
+        const oldNegativeParts = [
+          rRow.didnt_work_text || "",
+          rRow.pattern_text || "",
+          rRow.change_text || "",
+        ].filter(s => s.trim());
         setRecap({
           positives: rRow.worked_text || "",
-          technical: rRow.didnt_work_text || "",
-          fundamental: rRow.pattern_text || "",
-          mistakes: rRow.change_text || "",
+          negatives: oldNegativeParts.join("\n\n"),
         });
         setRecapId(rRow.id);
         setSavedAt(rRow.updated_at || rRow.created_at);
@@ -527,8 +532,8 @@ function RecapTab({ user, accounts, activeAccount }) {
     const payload = {
       user_id: user.id, account_id: effectiveAccountId,
       period_type: periodType, period_start: periodStart, period_end: periodEnd,
-      worked_text: recap.positives, didnt_work_text: recap.technical,
-      pattern_text: recap.fundamental, change_text: recap.mistakes,
+      worked_text: recap.positives, didnt_work_text: recap.negatives,
+      pattern_text: "", change_text: "",
       conviction: 3, updated_at: new Date().toISOString(),
     };
     let result;
@@ -607,22 +612,14 @@ function RecapTab({ user, accounts, activeAccount }) {
             <button onClick={saveRecap} disabled={saving} style={{ ...btnP, padding: "8px 18px", opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>{saving ? "Saving..." : justSaved ? "✓ Saved" : (recapId ? "Update" : "Save Recap")}</button>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
           <div style={sectionStyle(T.green)}>
             <div style={sectionLabel(T.green)}>✓ Positives</div>
-            <textarea value={recap.positives} onChange={e => setRecap({ ...recap, positives: e.target.value })} rows={7} placeholder="What went well — good setups, discipline followed, smart decisions, patience..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 150, background: T.cardAlt }} />
-          </div>
-          <div style={sectionStyle(T.blue)}>
-            <div style={sectionLabel(T.blue)}>◧ Technical</div>
-            <textarea value={recap.technical} onChange={e => setRecap({ ...recap, technical: e.target.value })} rows={7} placeholder="Chart observations — setups that worked or failed, levels respected, structure shifts, execution timing..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 150, background: T.cardAlt }} />
-          </div>
-          <div style={sectionStyle(T.purple)}>
-            <div style={sectionLabel(T.purple)}>◎ Fundamental</div>
-            <textarea value={recap.fundamental} onChange={e => setRecap({ ...recap, fundamental: e.target.value })} rows={7} placeholder="Macro thesis — central bank moves, data releases, positioning, narrative shifts..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 150, background: T.cardAlt }} />
+            <textarea value={recap.positives} onChange={e => setRecap({ ...recap, positives: e.target.value })} rows={10} placeholder="What went well — good setups, discipline followed, smart decisions, technicals that worked, fundamental thesis confirmed..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 220, background: T.cardAlt }} />
           </div>
           <div style={sectionStyle(T.red)}>
-            <div style={sectionLabel(T.red)}>✕ Mistakes</div>
-            <textarea value={recap.mistakes} onChange={e => setRecap({ ...recap, mistakes: e.target.value })} rows={7} placeholder="What went wrong — broken rules, FOMO, revenge trades, sized too big, exited too early..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 150, background: T.cardAlt }} />
+            <div style={sectionLabel(T.red)}>✕ Negatives</div>
+            <textarea value={recap.negatives} onChange={e => setRecap({ ...recap, negatives: e.target.value })} rows={10} placeholder="What went wrong — broken rules, FOMO, revenge trades, sized too big, missed levels, fundamental thesis failed..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 220, background: T.cardAlt }} />
           </div>
         </div>
       </div>
@@ -726,6 +723,7 @@ function Journal({ user, onLogout }) {
   const [sortCol, setSortCol] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
   const [search, setSearch] = useState("");
+  const [groupBy, setGroupBy] = useState("none"); // none | week | month
   const [exportingHTML, setExportingHTML] = useState(false);
 
   useEffect(() => {
@@ -906,7 +904,9 @@ function Journal({ user, onLogout }) {
             </td>
           </tr>`).join('');
 
-        const recapBlocks = accRecaps.map(r => `
+        const recapBlocks = accRecaps.map(r => {
+          const negParts = [r.didnt_work_text, r.pattern_text, r.change_text].filter(s => (s || '').trim()).map(esc).join('<br><br>');
+          return `
           <div class="recap">
             <div class="recap-head">
               <span class="recap-period">${r.period_type === 'week' ? '📅 Week' : '🗓️ Month'} starting ${esc(r.period_start)}</span>
@@ -914,11 +914,10 @@ function Journal({ user, onLogout }) {
             </div>
             <div class="recap-grid">
               ${r.worked_text ? `<div class="rsec rsec-pos"><div class="rsec-label">✓ Positives</div><div class="rsec-body">${esc(r.worked_text).replace(/\n/g, '<br>')}</div></div>` : ''}
-              ${r.didnt_work_text ? `<div class="rsec rsec-tech"><div class="rsec-label">◧ Technical</div><div class="rsec-body">${esc(r.didnt_work_text).replace(/\n/g, '<br>')}</div></div>` : ''}
-              ${r.pattern_text ? `<div class="rsec rsec-fund"><div class="rsec-label">◎ Fundamental</div><div class="rsec-body">${esc(r.pattern_text).replace(/\n/g, '<br>')}</div></div>` : ''}
-              ${r.change_text ? `<div class="rsec rsec-mist"><div class="rsec-label">✕ Mistakes</div><div class="rsec-body">${esc(r.change_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+              ${negParts ? `<div class="rsec rsec-mist"><div class="rsec-label">✕ Negatives</div><div class="rsec-body">${negParts.replace(/\n/g, '<br>')}</div></div>` : ''}
             </div>
-          </div>`).join('');
+          </div>`;
+        }).join('');
 
         return `
           <section class="account">
@@ -953,7 +952,9 @@ function Journal({ user, onLogout }) {
       const sharedRecapBlocks = sharedRecaps.length === 0 ? '' : `
         <section class="account">
           <div class="acc-head"><h2>Cross-Account Recaps</h2></div>
-          ${sharedRecaps.map(r => `
+          ${sharedRecaps.map(r => {
+            const negParts = [r.didnt_work_text, r.pattern_text, r.change_text].filter(s => (s || '').trim()).map(esc).join('<br><br>');
+            return `
             <div class="recap">
               <div class="recap-head">
                 <span class="recap-period">${r.period_type === 'week' ? '📅 Week' : '🗓️ Month'} starting ${esc(r.period_start)}</span>
@@ -961,11 +962,10 @@ function Journal({ user, onLogout }) {
               </div>
               <div class="recap-grid">
                 ${r.worked_text ? `<div class="rsec rsec-pos"><div class="rsec-label">✓ Positives</div><div class="rsec-body">${esc(r.worked_text).replace(/\n/g, '<br>')}</div></div>` : ''}
-                ${r.didnt_work_text ? `<div class="rsec rsec-tech"><div class="rsec-label">◧ Technical</div><div class="rsec-body">${esc(r.didnt_work_text).replace(/\n/g, '<br>')}</div></div>` : ''}
-                ${r.pattern_text ? `<div class="rsec rsec-fund"><div class="rsec-label">◎ Fundamental</div><div class="rsec-body">${esc(r.pattern_text).replace(/\n/g, '<br>')}</div></div>` : ''}
-                ${r.change_text ? `<div class="rsec rsec-mist"><div class="rsec-label">✕ Mistakes</div><div class="rsec-body">${esc(r.change_text).replace(/\n/g, '<br>')}</div></div>` : ''}
+                ${negParts ? `<div class="rsec rsec-mist"><div class="rsec-label">✕ Negatives</div><div class="rsec-body">${negParts.replace(/\n/g, '<br>')}</div></div>` : ''}
               </div>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
         </section>`;
 
       const fullDataJSON = JSON.stringify({
@@ -1511,6 +1511,11 @@ function downloadJSON() {
                 )}
                 <div style={{ ...cardS, padding: 12 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 0, marginRight: 4 }}>
+                      <button onClick={() => setGroupBy("none")} style={{ ...btnG, padding: "7px 12px", fontSize: 11, background: groupBy === "none" ? T.accent : "transparent", color: groupBy === "none" ? "#fff" : T.textMid, borderColor: groupBy === "none" ? T.accent : T.border, borderRadius: "8px 0 0 8px" }}>All</button>
+                      <button onClick={() => setGroupBy("week")} style={{ ...btnG, padding: "7px 12px", fontSize: 11, background: groupBy === "week" ? T.accent : "transparent", color: groupBy === "week" ? "#fff" : T.textMid, borderColor: groupBy === "week" ? T.accent : T.border, borderLeft: "none", borderRight: "none", borderRadius: 0 }}>By Week</button>
+                      <button onClick={() => setGroupBy("month")} style={{ ...btnG, padding: "7px 12px", fontSize: 11, background: groupBy === "month" ? T.accent : "transparent", color: groupBy === "month" ? "#fff" : T.textMid, borderColor: groupBy === "month" ? T.accent : T.border, borderRadius: "0 8px 8px 0" }}>By Month</button>
+                    </div>
                     <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ ...inputS, width: 160, fontSize: 11, padding: "7px 10px" }} />
                     <select value={fPair} onChange={e => setFPair(e.target.value)} style={{ ...selectS, width: 120, fontSize: 11, padding: "7px 10px" }}><option value="All">All Pairs</option>{pairNames.map(p => <option key={p} value={p}>{p}</option>)}</select>
                     <select value={fResult} onChange={e => setFResult(e.target.value)} style={{ ...selectS, width: 110, fontSize: 11, padding: "7px 10px" }}><option value="All">All Results</option><option>Win</option><option>Loss</option><option>Breakeven</option></select>
@@ -1536,35 +1541,113 @@ function downloadJSON() {
                       <th style={{ padding: "10px 7px", width: 55, borderBottom: `1px solid ${T.border}` }}></th>
                     </tr></thead>
                     <tbody>
-                      {filtered.map((t, i) => (
-                        <tr key={t.id} style={{ background: i % 2 === 0 ? T.card : T.cardAlt }}>
-                          <td style={{ padding: "8px 7px", whiteSpace: "nowrap", borderBottom: `1px solid ${T.borderLight}` }}>{t.date}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.day?.substring(0, 3)}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.session}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.pair} type="pair" /></td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.direction} /></td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.risk}%</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.entry}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.exit}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.rr || "—"}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: t.result === "Win" && t.max_r ? T.green : T.textLight }}>{t.result === "Win" ? (t.max_r || "—") : "—"}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600 }}>
-                            <span style={{ color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span><br />
-                            <span style={{ fontSize: 9, color: T.textLight }}>{fU(t.pnl_usd)}</span>
-                          </td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.result} /></td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.bias_type}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: T.amber }}>{"★".repeat(t.rating || 0)}</td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, whiteSpace: "nowrap" }}>
-                            {t.exec_link && <a href={t.exec_link} target="_blank" rel="noreferrer" style={{ color: T.blue, fontSize: 9, marginRight: 5, textDecoration: "none", fontWeight: 600 }}>Chart</a>}
-                            {t.bias_link && <a href={t.bias_link} target="_blank" rel="noreferrer" style={{ color: T.purple, fontSize: 9, textDecoration: "none", fontWeight: 600 }}>Bias</a>}
-                          </td>
-                          <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>
-                            <button onClick={() => editTrade(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.amber, fontSize: 12, padding: "2px" }}>✎</button>
-                            <button onClick={() => deleteTrade(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 12, padding: "2px" }}>✕</button>
-                          </td>
-                        </tr>
-                      ))}
+                      {(() => {
+                        // Build group keys + labels for each trade
+                        const keyFor = (t) => {
+                          if (groupBy === "week") {
+                            const monday = startOfWeek(parseLocalDate(t.date));
+                            return isoDate(monday);
+                          }
+                          if (groupBy === "month") return (t.date || "").substring(0, 7);
+                          return null;
+                        };
+                        const labelFor = (key) => {
+                          if (groupBy === "week") {
+                            const monday = parseLocalDate(key);
+                            const friday = endOfWeek(monday);
+                            return `Week of ${monday.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${friday.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+                          }
+                          if (groupBy === "month") {
+                            return parseLocalDate(key + "-01").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+                          }
+                          return "";
+                        };
+
+                        // Group trades preserving sort order
+                        const groups = [];
+                        const groupMap = {};
+                        if (groupBy === "none") {
+                          groups.push({ key: "_all", trades: filtered });
+                        } else {
+                          filtered.forEach(t => {
+                            const k = keyFor(t);
+                            if (!groupMap[k]) {
+                              groupMap[k] = { key: k, trades: [] };
+                              groups.push(groupMap[k]);
+                            }
+                            groupMap[k].trades.push(t);
+                          });
+                        }
+
+                        const rows = [];
+                        let rowIndex = 0;
+                        groups.forEach(g => {
+                          if (groupBy !== "none") {
+                            // Compute group stats
+                            const gN = g.trades.length;
+                            const gW = g.trades.filter(t => t.result === "Win").length;
+                            const gL = g.trades.filter(t => t.result === "Loss").length;
+                            const gBE = g.trades.filter(t => t.result === "Breakeven").length;
+                            const gWR = (gW + gL) > 0 ? (gW / (gW + gL)) * 100 : 0;
+                            const gPnl = g.trades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+                            const gUsd = g.trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+
+                            rows.push(
+                              <tr key={"hdr-" + g.key} style={{ background: T.headerBg }}>
+                                <td colSpan={16} style={{ padding: "10px 12px", color: "#fff", fontFamily: mono, fontSize: 11, letterSpacing: 0.5 }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                                    <span style={{ fontWeight: 700 }}>
+                                      {groupBy === "week" ? "📅 " : "🗓️ "}{labelFor(g.key)}
+                                    </span>
+                                    <div style={{ display: "flex", gap: 14, fontSize: 11, alignItems: "center", flexWrap: "wrap" }}>
+                                      <span style={{ background: "rgba(255,255,255,0.1)", padding: "2px 8px", borderRadius: 4 }}>{gN} {gN === 1 ? "trade" : "trades"}</span>
+                                      <span style={{ color: T.green }}>{gW}W</span>
+                                      <span style={{ color: T.red }}>{gL}L</span>
+                                      {gBE > 0 && <span style={{ color: "rgba(255,255,255,0.6)" }}>{gBE}BE</span>}
+                                      <span style={{ color: gWR >= 50 ? T.green : T.red, fontWeight: 600 }}>{(gW + gL) > 0 ? `${gWR.toFixed(0)}%` : "—"}</span>
+                                      <span style={{ color: gPnl >= 0 ? T.green : T.red, fontWeight: 700 }}>{fP(gPnl)}</span>
+                                      <span style={{ color: gUsd >= 0 ? T.green : T.red, fontWeight: 600 }}>{fU(gUsd)}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          }
+                          g.trades.forEach(t => {
+                            const i = rowIndex++;
+                            rows.push(
+                              <tr key={t.id} style={{ background: i % 2 === 0 ? T.card : T.cardAlt }}>
+                                <td style={{ padding: "8px 7px", whiteSpace: "nowrap", borderBottom: `1px solid ${T.borderLight}` }}>{t.date}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.day?.substring(0, 3)}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.session}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.pair} type="pair" /></td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.direction} /></td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.risk}%</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.entry}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.exit}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.rr || "—"}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: t.result === "Win" && t.max_r ? T.green : T.textLight }}>{t.result === "Win" ? (t.max_r || "—") : "—"}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600 }}>
+                                  <span style={{ color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span><br />
+                                  <span style={{ fontSize: 9, color: T.textLight }}>{fU(t.pnl_usd)}</span>
+                                </td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.result} /></td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.bias_type}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: T.amber }}>{"★".repeat(t.rating || 0)}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, whiteSpace: "nowrap" }}>
+                                  {t.exec_link && <a href={t.exec_link} target="_blank" rel="noreferrer" style={{ color: T.blue, fontSize: 9, marginRight: 5, textDecoration: "none", fontWeight: 600 }}>Chart</a>}
+                                  {t.bias_link && <a href={t.bias_link} target="_blank" rel="noreferrer" style={{ color: T.purple, fontSize: 9, textDecoration: "none", fontWeight: 600 }}>Bias</a>}
+                                </td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>
+                                  <button onClick={() => editTrade(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.amber, fontSize: 12, padding: "2px" }}>✎</button>
+                                  <button onClick={() => deleteTrade(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 12, padding: "2px" }}>✕</button>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        });
+                        return rows;
+                      })()}
                     </tbody>
                   </table>
                   {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: T.textLight }}>{hasActiveFilters ? "No trades match filters" : "No trades"}</div>}
