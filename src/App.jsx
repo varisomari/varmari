@@ -631,6 +631,77 @@ function RecapTab({ user, accounts, activeAccount }) {
   const jumpTo = (recapRow) => { setPeriodType(recapRow.period_type); setPeriodDate(parseLocalDate(recapRow.period_start)); };
   const scopeLabel = scope === "all" ? "All Accounts" : (scope === "active" ? `${activeAccount?.name || "—"}` : (accounts.find(a => a.id === scope)?.name || "—"));
 
+  // Print mistakes to PDF via browser print dialog
+  const printMistakes = () => {
+    const tradeMistakes = periodTrades
+      .filter(t => (t.notes_mistakes || "").trim())
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
+    const headerLine = `${periodLabel} · ${scopeLabel}`;
+    const refineText = (recap.positives || "").trim();
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Mistakes Review — ${esc(periodLabel)}</title>
+<style>
+  @page { margin: 18mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Helvetica, sans-serif; color: #2C2418; margin: 0; padding: 24px; line-height: 1.55; }
+  h1 { font-size: 22px; margin: 0 0 4px 0; font-weight: 700; }
+  .sub { font-size: 12px; color: #6B5D4F; letter-spacing: 0.5px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid #E8E0D4; }
+  .section-title { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #9C8E7E; margin: 22px 0 10px 0; font-weight: 700; }
+  .mistake { margin-bottom: 14px; padding: 12px 14px; background: #FDF0EF; border-left: 4px solid #C4342A; border-radius: 4px; page-break-inside: avoid; }
+  .mistake-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; }
+  .date { font-family: 'Courier New', monospace; color: #6B5D4F; font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Courier New', monospace; }
+  .pill-pair { background: #FDF3E8; color: #C47A3B; }
+  .pill-long, .pill-win { background: #E8F5EE; color: #1A8754; }
+  .pill-short, .pill-loss { background: #FDF0EF; color: #C4342A; }
+  .pill-breakeven { background: #FAF8F4; color: #6B5D4F; }
+  .pnl { margin-left: auto; font-family: 'Courier New', monospace; font-weight: 700; }
+  .pnl.pos { color: #1A8754; } .pnl.neg { color: #C4342A; }
+  .body { font-size: 13px; color: #2C2418; white-space: pre-wrap; }
+  .refine { background: #E8F5EE; border-left: 4px solid #1A8754; padding: 14px 16px; border-radius: 4px; font-size: 13px; white-space: pre-wrap; page-break-inside: avoid; }
+  .empty { color: #9C8E7E; font-style: italic; padding: 16px 0; }
+  .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #E8E0D4; font-size: 10px; color: #9C8E7E; font-family: 'Courier New', monospace; }
+  @media print { body { padding: 0; } }
+</style></head><body>
+<h1>Mistakes Review</h1>
+<div class="sub">${esc(headerLine)} · Generated ${new Date().toLocaleString()}</div>
+
+${refineText ? `
+<div class="section-title">✓ What to Refine / Keep Doing</div>
+<div class="refine">${esc(refineText)}</div>
+` : ""}
+
+<div class="section-title">✕ Mistakes from Trades · ${tradeMistakes.length} ${tradeMistakes.length === 1 ? "entry" : "entries"}</div>
+${tradeMistakes.length === 0 ? '<div class="empty">No trade mistakes logged in this period.</div>' :
+  tradeMistakes.map(t => {
+    const pnlClass = (parseFloat(t.pnl_pct) || 0) >= 0 ? "pos" : "neg";
+    const pnlVal = (parseFloat(t.pnl_pct) || 0);
+    const pnlStr = `${pnlVal >= 0 ? "+" : ""}${pnlVal.toFixed(2)}%`;
+    return `
+    <div class="mistake">
+      <div class="mistake-head">
+        <span class="date">${esc(t.date)}</span>
+        <span class="pill pill-pair">${esc(t.pair)}</span>
+        <span class="pill pill-${(t.direction || '').toLowerCase()}">${esc(t.direction)}</span>
+        <span class="pill pill-${(t.result || '').toLowerCase()}">${esc(t.result)}</span>
+        <span class="pnl ${pnlClass}">${pnlStr}</span>
+      </div>
+      <div class="body">${esc(t.notes_mistakes)}</div>
+    </div>`;
+  }).join("")
+}
+
+<div class="footer">VARMARI · Mistakes review · Use browser Print → Save as PDF</div>
+<script>window.onload = () => setTimeout(() => window.print(), 250);</script>
+</body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) { alert("Please allow popups for varmari.com to print."); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
   const sectionStyle = (color) => ({ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 16, display: "flex", flexDirection: "column" });
   const sectionLabel = (color) => ({ fontSize: 11, fontWeight: 700, color, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 });
 
@@ -695,7 +766,10 @@ function RecapTab({ user, accounts, activeAccount }) {
           </div>
           {/* MISTAKES — auto-filled trade mistakes (read-only) + editable area for period-level notes */}
           <div style={sectionStyle(T.red)}>
-            <div style={sectionLabel(T.red)}>✕ Mistakes</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ ...sectionLabel(T.red), marginBottom: 0 }}>✕ Mistakes</div>
+              <button onClick={printMistakes} title="Print / Save as PDF" style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.red, borderColor: T.red + "40" }}>📄 PDF</button>
+            </div>
             {(() => {
               const tradeMistakes = periodTrades
                 .filter(t => (t.notes_mistakes || "").trim())
@@ -704,7 +778,7 @@ function RecapTab({ user, accounts, activeAccount }) {
                 return <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono, padding: "10px 12px", background: T.cardAlt, border: `1px dashed ${T.border}`, borderRadius: 6, marginBottom: 10 }}>No trade mistakes logged this period.</div>;
               }
               return (
-                <div style={{ marginBottom: 10, background: T.redBg, border: `1px solid ${T.red}30`, borderRadius: 6, padding: 10, maxHeight: 220, overflowY: "auto" }}>
+                <div style={{ marginBottom: 10, background: T.redBg, border: `1px solid ${T.red}30`, borderRadius: 6, padding: 12, maxHeight: 550, overflowY: "auto" }}>
                   <div style={{ fontSize: 9, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 8 }}>From trades · {tradeMistakes.length} {tradeMistakes.length === 1 ? "entry" : "entries"} (auto)</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {tradeMistakes.map(t => (
