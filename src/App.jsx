@@ -648,8 +648,7 @@ function RecapTab({ user, accounts, activeAccount }) {
                 </div>
               );
             })()}
-            <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 4 }}>Your period notes</div>
-            <textarea value={recap.negatives} onChange={e => setRecap({ ...recap, negatives: e.target.value })} rows={5} placeholder="Period-level mistakes, themes, lessons across the whole week/month..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 110, background: T.cardAlt }} />
+            <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, fontStyle: "italic", textAlign: "center", padding: "4px 0" }}>Period-level reflections go in the Refine box →</div>
           </div>
         </div>
       </div>
@@ -1880,28 +1879,324 @@ function downloadJSON() {
             })()}
             {tab === "pairs" && !S && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No data yet</div>}
 
-            {tab === "monthly" && S && Object.keys(S.mo).length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {Object.keys(S.mo).sort().reverse().map(m => { const mm = S.mo[m]; const wr = mm.w / (mm.w + mm.l || 1) * 100; const monthTrades = trades.filter(t => t.date?.startsWith(m)).sort((a, b) => a.date.localeCompare(b.date)); return (
-                  <div key={m} style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 16, fontWeight: 700, fontFamily: mono }}>{m}</span>
-                      <div style={{ display: "flex", gap: 14, fontSize: 11, fontFamily: mono, flexWrap: "wrap" }}>
-                        <span>{mm.n}T</span><span style={{ color: T.green }}>{mm.w}W</span><span style={{ color: T.red }}>{mm.l}L</span>
-                        <span style={{ color: wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{wr.toFixed(0)}%</span>
-                        <span style={{ color: cP(mm.pnl), fontWeight: 700 }}>{fP(mm.pnl)}</span>
-                        <span style={{ color: cP(mm.usd), fontWeight: 600 }}>{fU(mm.usd)}</span>
-                      </div>
+            {tab === "monthly" && S && Object.keys(S.mo).length > 0 ? (() => {
+              // Build month-by-month analytics
+              const monthsAsc = Object.keys(S.mo).sort();
+              const monthsDesc = [...monthsAsc].reverse();
+              const last6 = monthsDesc.slice(0, 6).reverse(); // chronological order, oldest first
+
+              const monthMeta = {};
+              monthsAsc.forEach(m => {
+                const mTrades = trades.filter(t => t.date?.startsWith(m));
+                const wins = mTrades.filter(t => t.result === "Win");
+                const losses = mTrades.filter(t => t.result === "Loss");
+                const wr = (wins.length + losses.length) > 0 ? (wins.length / (wins.length + losses.length)) * 100 : 0;
+                const pnl = mTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+                const usd = mTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+                const best = mTrades.length ? Math.max(...mTrades.map(t => parseFloat(t.pnl_pct) || 0)) : 0;
+                const worst = mTrades.length ? Math.min(...mTrades.map(t => parseFloat(t.pnl_pct) || 0)) : 0;
+                // Max DD within the month (peak-to-trough on cumulative pnl_usd within month)
+                const sorted = [...mTrades].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+                let cum = 0, peak = 0, dd = 0;
+                sorted.forEach(t => {
+                  cum += parseFloat(t.pnl_usd) || 0;
+                  if (cum > peak) peak = cum;
+                  if (peak - cum > dd) dd = peak - cum;
+                });
+                // Avg risk + mistake rate + rating split
+                const avgRisk = mTrades.length ? mTrades.reduce((s, t) => s + (parseFloat(t.risk) || 0), 0) / mTrades.length : 0;
+                const mistakeCount = mTrades.filter(t => (t.notes_mistakes || "").trim()).length;
+                const mistakeRate = mTrades.length ? (mistakeCount / mTrades.length) * 100 : 0;
+                const avgRating = mTrades.length ? mTrades.reduce((s, t) => s + (parseInt(t.rating) || 0), 0) / mTrades.length : 0;
+                const highConv = mTrades.filter(t => (t.rating || 0) >= 4);
+                const lowConv = mTrades.filter(t => (t.rating || 0) <= 2 && (t.rating || 0) > 0);
+                const highW = highConv.filter(t => t.result === "Win").length;
+                const highL = highConv.filter(t => t.result === "Loss").length;
+                const lowW = lowConv.filter(t => t.result === "Win").length;
+                const lowL = lowConv.filter(t => t.result === "Loss").length;
+                const highWR = (highW + highL) > 0 ? (highW / (highW + highL)) * 100 : null;
+                const lowWR = (lowW + lowL) > 0 ? (lowW / (lowW + lowL)) * 100 : null;
+
+                monthMeta[m] = {
+                  n: mTrades.length, w: wins.length, l: losses.length, wr, pnl, usd,
+                  best, worst, dd, avgRisk, mistakeCount, mistakeRate, avgRating,
+                  highConvN: highConv.length, highWR, lowConvN: lowConv.length, lowWR,
+                };
+              });
+
+              // Pair × Month heatmap data
+              const pairPnlByMonth = {};
+              trades.forEach(t => {
+                if (!t.pair || !t.date) return;
+                const m = t.date.substring(0, 7);
+                if (!pairPnlByMonth[t.pair]) pairPnlByMonth[t.pair] = { total: 0, byMonth: {} };
+                pairPnlByMonth[t.pair].total += parseFloat(t.pnl_pct) || 0;
+                if (!pairPnlByMonth[t.pair].byMonth[m]) pairPnlByMonth[t.pair].byMonth[m] = 0;
+                pairPnlByMonth[t.pair].byMonth[m] += parseFloat(t.pnl_pct) || 0;
+              });
+              const topPairs = Object.keys(pairPnlByMonth)
+                .map(p => ({ pair: p, ...pairPnlByMonth[p], traded: Object.keys(pairPnlByMonth[p].byMonth).length }))
+                .sort((a, b) => {
+                  // Sort by total absolute impact, then by recent activity
+                  const aImpact = Math.abs(a.total);
+                  const bImpact = Math.abs(b.total);
+                  return bImpact - aImpact;
+                })
+                .slice(0, 10);
+
+              // Heatmap color scale — find max absolute PnL across all cells in last6
+              let maxAbs = 0;
+              topPairs.forEach(p => last6.forEach(m => { const v = p.byMonth[m] || 0; if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v); }));
+              const heatColor = (v) => {
+                if (v === 0 || maxAbs === 0) return { bg: T.cardAlt, fg: T.textLight };
+                const intensity = Math.min(1, Math.abs(v) / maxAbs);
+                if (v > 0) {
+                  const alpha = 0.15 + intensity * 0.65;
+                  return { bg: `rgba(26, 135, 84, ${alpha})`, fg: intensity > 0.5 ? "#fff" : T.green };
+                } else {
+                  const alpha = 0.15 + intensity * 0.65;
+                  return { bg: `rgba(196, 52, 42, ${alpha})`, fg: intensity > 0.5 ? "#fff" : T.red };
+                }
+              };
+
+              const monthLabel = (m) => {
+                const [y, mo] = m.split("-");
+                const d = new Date(parseInt(y), parseInt(mo) - 1, 1);
+                return d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+              };
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+                  {/* 1. MONTH-OVER-MONTH COMPARISON STRIP */}
+                  <div style={{ ...cardS, padding: 18 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Month-over-Month · Last 6 months</span>
+                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Are you improving or regressing?</span>
                     </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                      {monthTrades.map(t => (
-                        <div key={t.id} title={`${t.date} ${t.pair} ${t.direction} ${fP(t.pnl_pct)}`} onClick={() => editTrade(t)} style={{ width: 30, height: 30, borderRadius: 6, ...center, fontSize: 8, fontFamily: mono, fontWeight: 600, cursor: "pointer", background: t.result === "Win" ? T.greenBg : t.result === "Loss" ? T.redBg : T.cardAlt, color: t.result === "Win" ? T.green : t.result === "Loss" ? T.red : T.textMid, border: `1px solid ${t.result === "Win" ? T.green + "30" : t.result === "Loss" ? T.red + "30" : T.border}` }}>{t.date.split("-")[2]}</div>
-                      ))}
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 600 }}>
+                        <thead>
+                          <tr style={{ background: T.cardAlt }}>
+                            <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Metric</th>
+                            {last6.map(m => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            { k: "n", l: "Trades", fmt: v => v, color: () => T.text },
+                            { k: "wr", l: "Win Rate", fmt: v => `${v.toFixed(0)}%`, color: v => v >= 50 ? T.green : T.red },
+                            { k: "pnl", l: "PnL %", fmt: v => fP(v), color: cP },
+                            { k: "usd", l: "PnL $", fmt: v => fU(v), color: cP },
+                            { k: "best", l: "Best Trade", fmt: v => fP(v), color: () => T.green },
+                            { k: "worst", l: "Worst Trade", fmt: v => fP(v), color: () => T.red },
+                            { k: "dd", l: "Max DD ($)", fmt: v => v > 0 ? `−$${v.toFixed(0)}` : "—", color: () => T.red },
+                          ].map((row, ri) => (
+                            <tr key={row.k} style={{ background: ri % 2 === 0 ? T.card : T.cardAlt }}>
+                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>{row.l}</td>
+                              {last6.map(m => {
+                                const meta = monthMeta[m];
+                                const v = meta ? meta[row.k] : 0;
+                                const hasData = meta && meta.n > 0;
+                                return (
+                                  <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: hasData ? row.color(v) : T.textLight, fontWeight: 600, opacity: hasData ? 1 : 0.4 }}>
+                                    {hasData ? row.fmt(v) : "—"}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                ); })}
-              </div>
-            ) : tab === "monthly" && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No monthly data</div>}
+
+                  {/* 2. PAIR × MONTH HEATMAP */}
+                  <div style={{ ...cardS, padding: 18 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Pair × Month Heatmap · Top {topPairs.length} pairs</span>
+                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Which pairs to lean into · Which to drop</span>
+                    </div>
+                    {topPairs.length === 0 ? (
+                      <div style={{ padding: 20, textAlign: "center", color: T.textLight, fontSize: 12 }}>No pair data yet</div>
+                    ) : (
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 3, fontSize: 11, fontFamily: mono, minWidth: 600 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: "left", padding: "4px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Pair</th>
+                              {last6.map(m => <th key={m} style={{ textAlign: "center", padding: "4px 8px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
+                              <th style={{ textAlign: "right", padding: "4px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {topPairs.map(p => (
+                              <tr key={p.pair}>
+                                <td style={{ padding: "6px 10px", background: T.cardAlt, borderRadius: 6 }}><Pill text={p.pair} type="pair" /></td>
+                                {last6.map(m => {
+                                  const v = p.byMonth[m] || 0;
+                                  const hc = heatColor(v);
+                                  return (
+                                    <td key={m} style={{ textAlign: "center", padding: "8px 6px", background: hc.bg, color: hc.fg, fontWeight: 700, borderRadius: 6, minWidth: 60 }}>
+                                      {v === 0 ? "—" : fP(v)}
+                                    </td>
+                                  );
+                                })}
+                                <td style={{ textAlign: "right", padding: "6px 10px", background: T.cardAlt, borderRadius: 6, color: cP(p.total), fontWeight: 700 }}>{fP(p.total)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. SETUP QUALITY DRIFT */}
+                  <div style={{ ...cardS, padding: 18 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Setup Quality Drift</span>
+                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Are your high-conviction trades still outperforming?</span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 600 }}>
+                        <thead>
+                          <tr style={{ background: T.cardAlt }}>
+                            <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Metric</th>
+                            {last6.map(m => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr style={{ background: T.card }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Avg Rating</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              const v = meta ? meta.avgRating : 0;
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.amber, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${v.toFixed(1)} ★` : "—"}</td>;
+                            })}
+                          </tr>
+                          <tr style={{ background: T.cardAlt }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>4-5★ Trades</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${meta.highConvN}` : "—"}</td>;
+                            })}
+                          </tr>
+                          <tr style={{ background: T.card }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>4-5★ Win Rate</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              const wr = meta ? meta.highWR : null;
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: wr != null && wr >= 50 ? T.green : wr != null ? T.red : T.textLight, fontWeight: 600 }}>{wr != null ? `${wr.toFixed(0)}%` : "—"}</td>;
+                            })}
+                          </tr>
+                          <tr style={{ background: T.cardAlt }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>1-2★ Trades</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${meta.lowConvN}` : "—"}</td>;
+                            })}
+                          </tr>
+                          <tr style={{ background: T.card }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>1-2★ Win Rate</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              const wr = meta ? meta.lowWR : null;
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: wr != null && wr >= 50 ? T.green : wr != null ? T.red : T.textLight, fontWeight: 600 }}>{wr != null ? `${wr.toFixed(0)}%` : "—"}</td>;
+                            })}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                      <strong style={{ color: T.amber }}>Read:</strong> Your edge is real if 4-5★ WR consistently &gt; 1-2★ WR. If they converge or invert, your selection process has stopped working — review what changed.
+                    </div>
+                  </div>
+
+                  {/* 4. DISCIPLINE METRICS */}
+                  <div style={{ ...cardS, padding: 18 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Discipline Metrics</span>
+                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Sizing · Frequency · Self-awareness</span>
+                    </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 600 }}>
+                        <thead>
+                          <tr style={{ background: T.cardAlt }}>
+                            <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Metric</th>
+                            {last6.map(m => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr style={{ background: T.card }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Trades / month</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? meta.n : "—"}</td>;
+                            })}
+                          </tr>
+                          <tr style={{ background: T.cardAlt }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Avg Risk %</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: meta && meta.avgRisk > 1.5 ? T.red : T.text, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${meta.avgRisk.toFixed(2)}%` : "—"}</td>;
+                            })}
+                          </tr>
+                          <tr style={{ background: T.card }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Mistakes Logged</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${meta.mistakeCount}` : "—"}</td>;
+                            })}
+                          </tr>
+                          <tr style={{ background: T.cardAlt }}>
+                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Mistake Rate</td>
+                            {last6.map(m => {
+                              const meta = monthMeta[m];
+                              const rate = meta ? meta.mistakeRate : 0;
+                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: rate > 30 ? T.red : rate > 0 ? T.amber : T.textLight, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${rate.toFixed(0)}%` : "—"}</td>;
+                            })}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                      <strong style={{ color: T.amber }}>Watch for:</strong> Risk % creeping up after a winning streak. Trade count spiking (overtrading). Mistake rate falling to zero (stopped being honest with yourself, not actually improving).
+                    </div>
+                  </div>
+
+                  {/* MONTH BREAKDOWN — keeps the old per-month day grid at the bottom */}
+                  <div style={{ ...cardS, padding: 18 }}>
+                    <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 12 }}>All Months · Click any trade to edit</div>
+                    {monthsDesc.map(m => {
+                      const mm = S.mo[m];
+                      const wr = mm.w / (mm.w + mm.l || 1) * 100;
+                      const monthTrades = trades.filter(t => t.date?.startsWith(m)).sort((a, b) => a.date.localeCompare(b.date));
+                      return (
+                        <div key={m} style={{ background: T.cardAlt, borderRadius: 10, padding: 14, marginBottom: 10, border: `1px solid ${T.borderLight}` }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, fontFamily: mono }}>{m}</span>
+                            <div style={{ display: "flex", gap: 14, fontSize: 11, fontFamily: mono, flexWrap: "wrap" }}>
+                              <span>{mm.n}T</span>
+                              <span style={{ color: T.green }}>{mm.w}W</span>
+                              <span style={{ color: T.red }}>{mm.l}L</span>
+                              <span style={{ color: wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{wr.toFixed(0)}%</span>
+                              <span style={{ color: cP(mm.pnl), fontWeight: 700 }}>{fP(mm.pnl)}</span>
+                              <span style={{ color: cP(mm.usd), fontWeight: 600 }}>{fU(mm.usd)}</span>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            {monthTrades.map(t => (
+                              <div key={t.id} title={`${t.date} ${t.pair} ${t.direction} ${fP(t.pnl_pct)}`} onClick={() => editTrade(t)} style={{ width: 30, height: 30, borderRadius: 6, ...center, fontSize: 8, fontFamily: mono, fontWeight: 600, cursor: "pointer", background: t.result === "Win" ? T.greenBg : t.result === "Loss" ? T.redBg : T.card, color: t.result === "Win" ? T.green : t.result === "Loss" ? T.red : T.textMid, border: `1px solid ${t.result === "Win" ? T.green + "30" : t.result === "Loss" ? T.red + "30" : T.border}` }}>{t.date.split("-")[2]}</div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              );
+            })() : tab === "monthly" && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No monthly data</div>}
 
             {tab === "recap" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} />}
 
