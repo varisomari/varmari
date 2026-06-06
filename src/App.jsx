@@ -613,13 +613,43 @@ function RecapTab({ user, accounts, activeAccount }) {
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+          {/* REFINE (was Positives) — saves to recap.positives */}
           <div style={sectionStyle(T.green)}>
-            <div style={sectionLabel(T.green)}>✓ Positives</div>
-            <textarea value={recap.positives} onChange={e => setRecap({ ...recap, positives: e.target.value })} rows={10} placeholder="What went well — good setups, discipline followed, smart decisions, technicals that worked, fundamental thesis confirmed..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 220, background: T.cardAlt }} />
+            <div style={sectionLabel(T.green)}>✓ Refine</div>
+            <textarea value={recap.positives} onChange={e => setRecap({ ...recap, positives: e.target.value })} rows={10} placeholder="What's working that you want to keep doing — strong setups, good discipline, profitable patterns to refine and build on..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 220, background: T.cardAlt }} />
           </div>
+          {/* MISTAKES — auto-filled trade mistakes (read-only) + editable area for period-level notes */}
           <div style={sectionStyle(T.red)}>
-            <div style={sectionLabel(T.red)}>✕ Negatives</div>
-            <textarea value={recap.negatives} onChange={e => setRecap({ ...recap, negatives: e.target.value })} rows={10} placeholder="What went wrong — broken rules, FOMO, revenge trades, sized too big, missed levels, fundamental thesis failed..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 220, background: T.cardAlt }} />
+            <div style={sectionLabel(T.red)}>✕ Mistakes</div>
+            {(() => {
+              const tradeMistakes = periodTrades
+                .filter(t => (t.notes_mistakes || "").trim())
+                .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+              if (tradeMistakes.length === 0) {
+                return <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono, padding: "10px 12px", background: T.cardAlt, border: `1px dashed ${T.border}`, borderRadius: 6, marginBottom: 10 }}>No trade mistakes logged this period.</div>;
+              }
+              return (
+                <div style={{ marginBottom: 10, background: T.redBg, border: `1px solid ${T.red}30`, borderRadius: 6, padding: 10, maxHeight: 220, overflowY: "auto" }}>
+                  <div style={{ fontSize: 9, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 8 }}>From trades · {tradeMistakes.length} {tradeMistakes.length === 1 ? "entry" : "entries"} (auto)</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {tradeMistakes.map(t => (
+                      <div key={t.id} style={{ background: T.card, borderRadius: 5, padding: "8px 10px", border: `1px solid ${T.borderLight}` }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 9, fontFamily: mono, color: T.textLight, fontWeight: 600 }}>{t.date}</span>
+                          <Pill text={t.pair} type="pair" />
+                          <Pill text={t.direction} />
+                          <Pill text={t.result} />
+                          <span style={{ fontSize: 10, fontFamily: mono, color: cP(t.pnl_pct), fontWeight: 600, marginLeft: "auto" }}>{fP(t.pnl_pct)}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{t.notes_mistakes}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+            <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 4 }}>Your period notes</div>
+            <textarea value={recap.negatives} onChange={e => setRecap({ ...recap, negatives: e.target.value })} rows={5} placeholder="Period-level mistakes, themes, lessons across the whole week/month..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 110, background: T.cardAlt }} />
           </div>
         </div>
       </div>
@@ -725,6 +755,7 @@ function Journal({ user, onLogout }) {
   const [search, setSearch] = useState("");
   const [groupBy, setGroupBy] = useState("none"); // none | week | month
   const [calMonth, setCalMonth] = useState(new Date()); // month displayed on dashboard calendar
+  const [dayModal, setDayModal] = useState(null); // { dateISO, trades } or null
   const [exportingHTML, setExportingHTML] = useState(false);
 
   useEffect(() => {
@@ -1231,6 +1262,83 @@ function downloadJSON() {
 
       {showAccountModal && <AccountModal accounts={accounts} activeId={activeAccount?.id} onClose={() => activeAccount && setShowAccountModal(false)} onCreate={createAccount} onDelete={deleteAccount} onSelect={selectAccount} />}
       {showPairsModal && <PairsModal pairs={pairs} onClose={() => setShowPairsModal(false)} onAdd={addPair} onUpdate={updatePair} onDelete={deletePair} onResetDefaults={resetPairsToDefaults} />}
+      {dayModal && (
+        <div onClick={() => setDayModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ ...cardS, width: "100%", maxWidth: 900, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+            {/* Header */}
+            <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{parseLocalDate(dayModal.dateISO).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+                <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 2 }}>
+                  {dayModal.trades.length} {dayModal.trades.length === 1 ? "trade" : "trades"} ·
+                  {" "}<span style={{ color: T.green }}>{dayModal.trades.filter(t => t.result === "Win").length}W</span> ·
+                  {" "}<span style={{ color: T.red }}>{dayModal.trades.filter(t => t.result === "Loss").length}L</span> ·
+                  {" "}<span style={{ color: cP(dayModal.trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0)), fontWeight: 700 }}>{fU(dayModal.trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0))}</span> ·
+                  {" "}<span style={{ color: cP(dayModal.trades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0)) }}>{fP(dayModal.trades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0))}</span>
+                </div>
+              </div>
+              <button onClick={() => setDayModal(null)} style={btnG}>✕ Close</button>
+            </div>
+            {/* Trade list */}
+            <div style={{ overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+              {dayModal.trades.map(t => (
+                <div key={t.id} style={{ background: T.cardAlt, border: `1px solid ${T.borderLight}`, borderRadius: 10, padding: 14 }}>
+                  {/* Top row: pair, dir, result, PnL, rating */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <Pill text={t.pair} type="pair" />
+                      <Pill text={t.direction} />
+                      <Pill text={t.result} />
+                      <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{t.session}</span>
+                      <span style={{ fontSize: 10, color: T.amber, fontFamily: mono }}>{"★".repeat(t.rating || 0)}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
+                      <span style={{ fontSize: 12, fontFamily: mono, color: cP(t.pnl_usd) }}>{fU(t.pnl_usd)}</span>
+                      <button onClick={() => { setDayModal(null); editTrade(t); }} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
+                    </div>
+                  </div>
+                  {/* Trade details */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, fontSize: 11, fontFamily: mono, color: T.textMid, marginBottom: (t.notes_technical || t.notes_fundamental || t.notes_mistakes) ? 10 : 0 }}>
+                    <div><span style={{ color: T.textLight }}>Risk:</span> {t.risk}%</div>
+                    <div><span style={{ color: T.textLight }}>Entry:</span> {t.entry || "—"}</div>
+                    <div><span style={{ color: T.textLight }}>Exit:</span> {t.exit || "—"}</div>
+                    <div><span style={{ color: T.textLight }}>R:R:</span> {t.rr || "—"}</div>
+                    {t.result === "Win" && <div><span style={{ color: T.textLight }}>Max R:</span> {t.max_r || "—"}</div>}
+                    <div><span style={{ color: T.textLight }}>Bias:</span> {t.bias_type || "—"}</div>
+                  </div>
+                  {/* Notes */}
+                  {(t.notes_technical || "").trim() && (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: 9, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>Technical</div>
+                      <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_technical}</div>
+                    </div>
+                  )}
+                  {(t.notes_fundamental || "").trim() && (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: 9, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>Fundamental</div>
+                      <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_fundamental}</div>
+                    </div>
+                  )}
+                  {(t.notes_mistakes || "").trim() && (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: 9, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>Mistakes</div>
+                      <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_mistakes}</div>
+                    </div>
+                  )}
+                  {/* Links */}
+                  {(t.exec_link || t.bias_link) && (
+                    <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                      {t.exec_link && <a href={t.exec_link} target="_blank" rel="noreferrer" style={{ color: T.blue, fontSize: 11, fontWeight: 600, fontFamily: mono, textDecoration: "none" }}>↗ Chart</a>}
+                      {t.bias_link && <a href={t.bias_link} target="_blank" rel="noreferrer" style={{ color: T.purple, fontSize: 11, fontWeight: 600, fontFamily: mono, textDecoration: "none" }}>↗ Bias</a>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {page === "calculator" && <PositionCalc />}
 
@@ -1405,7 +1513,7 @@ function downloadJSON() {
                                         display: "flex", flexDirection: "column", justifyContent: "space-between",
                                         cursor: hasTrades ? "pointer" : "default",
                                       }}
-                                      onClick={() => hasTrades && setTab("log")}
+                                      onClick={() => hasTrades && setDayModal({ dateISO: `${year}-${pad2(monthIdx + 1)}-${pad2(c.day)}`, trades: c.trades })}
                                     >
                                       <div style={{ fontSize: 11, fontWeight: 700, fontFamily: mono, color: isToday ? T.accent : (hasTrades ? T.text : T.textLight) }}>
                                         {c.day}
