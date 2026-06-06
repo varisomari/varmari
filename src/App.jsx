@@ -113,7 +113,7 @@ const emptyTrade = () => ({
   date: new Date().toISOString().split("T")[0],
   session: "London", pair: "EUR/USD", risk: 1, direction: "Long",
   entry: "", exit: "", rr: "", max_r: "", pnl_pct: "", result: "Win",
-  bias_type: "Confirmation", rating: 3, exec_link: "", bias_link: "",
+  exec_link: "", bias_link: "",
   notes_technical: "", notes_fundamental: "", notes_mistakes: "",
   adherence_checks: {}, tags: "",
 });
@@ -500,6 +500,106 @@ function ChecklistModal({ items, onClose, onAdd, onUpdate, onDelete }) {
 }
 
 // ══════════════════════════════════════════
+// DAILY PLAN — pre-market intent & end-of-day review
+// ══════════════════════════════════════════
+function DailyPlan({ user, activeAccount }) {
+  const todayISO = isoDate(new Date());
+  const [plan, setPlan] = useState({ plan_text: "", bias_text: "", followed: null });
+  const [planId, setPlanId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!activeAccount) return;
+    const load = async () => {
+      const { data } = await supabase.from("daily_plans")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("account_id", activeAccount.id)
+        .eq("date", todayISO)
+        .maybeSingle();
+      if (data) {
+        setPlan({ plan_text: data.plan_text || "", bias_text: data.bias_text || "", followed: data.followed });
+        setPlanId(data.id);
+      } else {
+        setPlan({ plan_text: "", bias_text: "", followed: null });
+        setPlanId(null);
+      }
+    };
+    load();
+  }, [user.id, activeAccount?.id, todayISO]);
+
+  const save = async (extra = {}) => {
+    if (!activeAccount) return;
+    setSaving(true);
+    const payload = {
+      user_id: user.id,
+      account_id: activeAccount.id,
+      date: todayISO,
+      plan_text: plan.plan_text,
+      bias_text: plan.bias_text,
+      followed: plan.followed,
+      updated_at: new Date().toISOString(),
+      ...extra,
+    };
+    let res;
+    if (planId) res = await supabase.from("daily_plans").update(payload).eq("id", planId).select().single();
+    else res = await supabase.from("daily_plans").insert(payload).select().single();
+    setSaving(false);
+    if (res.error) { alert("Plan save failed: " + res.error.message); return; }
+    setPlanId(res.data.id);
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 1500);
+  };
+
+  const markFollowed = async (v) => {
+    setPlan(p => ({ ...p, followed: v }));
+    await save({ followed: v });
+  };
+
+  const hasPlan = (plan.plan_text || "").trim().length > 0 || (plan.bias_text || "").trim().length > 0;
+  const todayLabel = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
+
+  return (
+    <div style={{ ...cardS, padding: 14 }}>
+      <div onClick={() => setExpanded(!expanded)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>📋 Today's Plan</span>
+          <span style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>{todayLabel}</span>
+          {!hasPlan && <span style={{ fontSize: 10, color: T.red, fontFamily: mono, fontWeight: 700, background: T.redBg, padding: "2px 8px", borderRadius: 4 }}>NO PLAN YET</span>}
+          {hasPlan && plan.followed === true && <span style={{ fontSize: 10, color: T.green, fontFamily: mono, fontWeight: 700, background: T.greenBg, padding: "2px 8px", borderRadius: 4 }}>✓ FOLLOWED</span>}
+          {hasPlan && plan.followed === false && <span style={{ fontSize: 10, color: T.red, fontFamily: mono, fontWeight: 700, background: T.redBg, padding: "2px 8px", borderRadius: 4 }}>✕ DEVIATED</span>}
+        </div>
+        <span style={{ fontSize: 14, color: T.textMid, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 150ms" }}>›</span>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
+            <Field label="Plan · what will you trade today">
+              <textarea value={plan.plan_text} onChange={e => setPlan({ ...plan, plan_text: e.target.value })} rows={3} placeholder="Pairs to watch, setups required, when to NOT trade..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 80 }} />
+            </Field>
+            <Field label="Bias · what's the market doing">
+              <textarea value={plan.bias_text} onChange={e => setPlan({ ...plan, bias_text: e.target.value })} rows={3} placeholder="Macro context, key levels, news risks..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 80 }} />
+            </Field>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={() => save()} disabled={saving} style={{ ...btnP, padding: "7px 16px", fontSize: 11, opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>{saving ? "Saving..." : justSaved ? "✓ Saved" : (planId ? "Update Plan" : "Save Plan")}</button>
+            {hasPlan && (
+              <>
+                <span style={{ fontSize: 11, color: T.textMid, marginLeft: 8 }}>End of day:</span>
+                <button onClick={() => markFollowed(true)} style={{ ...btnG, fontSize: 11, padding: "6px 12px", color: plan.followed === true ? "#fff" : T.green, borderColor: T.green + "60", background: plan.followed === true ? T.green : "transparent" }}>✓ Followed</button>
+                <button onClick={() => markFollowed(false)} style={{ ...btnG, fontSize: 11, padding: "6px 12px", color: plan.followed === false ? "#fff" : T.red, borderColor: T.red + "60", background: plan.followed === false ? T.red : "transparent" }}>✕ Deviated</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════
 // RECAP TAB
 // ══════════════════════════════════════════
 function RecapTab({ user, accounts, activeAccount }) {
@@ -824,7 +924,6 @@ ${tradeMistakes.length === 0 ? '<div class="empty">No trade mistakes logged in t
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ fontSize: 12, fontWeight: 600, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
-                        <span style={{ fontSize: 11, color: T.amber }}>{"★".repeat(t.rating || 0)}</span>
                         <span style={{ fontSize: 12, color: T.textMid, transform: open ? "rotate(90deg)" : "none", transition: "transform 150ms" }}>›</span>
                       </div>
                     </div>
@@ -898,8 +997,6 @@ function Journal({ user, onLogout }) {
   const [fDay, setFDay] = useState("All");
   const [fSess, setFSess] = useState("All");
   const [fDir, setFDir] = useState("All");
-  const [fBias, setFBias] = useState("All");
-  const [fRating, setFRating] = useState("All");
   const [fTag, setFTag] = useState("All");
   const [sortCol, setSortCol] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
@@ -1024,7 +1121,7 @@ function Journal({ user, onLogout }) {
       risk: parseFloat(form.risk) || 0, direction: form.direction,
       entry: form.entry, exit: form.exit, rr: form.rr, max_r: form.max_r,
       pnl_pct: pnl, pnl_usd: (pnl / 100) * activeAccount.starting_balance,
-      result: form.result, bias_type: form.bias_type, rating: form.rating,
+      result: form.result,
       exec_link: form.exec_link, bias_link: form.bias_link,
       notes_technical: form.notes_technical, notes_fundamental: form.notes_fundamental, notes_mistakes: form.notes_mistakes,
       adherence_checks: form.adherence_checks || {}, tags: normalizedTags,
@@ -1040,7 +1137,7 @@ function Journal({ user, onLogout }) {
     }
     setForm(emptyTrade()); setShowForm(false); setEditId(null);
   };
-  const editTrade = t => { setForm({ ...t, risk: t.risk || 1, rating: t.rating || 3, adherence_checks: t.adherence_checks || {}, tags: t.tags || "" }); setEditId(t.id); setShowForm(true); setTab("log"); };
+  const editTrade = t => { setForm({ ...t, risk: t.risk || 1, adherence_checks: t.adherence_checks || {}, tags: t.tags || "" }); setEditId(t.id); setShowForm(true); setTab("log"); };
   const deleteTrade = async id => {
     if (!confirm("Delete this trade?")) return;
     await supabase.from("trades").delete().eq("id", id);
@@ -1052,7 +1149,7 @@ function Journal({ user, onLogout }) {
     const tradeRows = trades.map(t => ({
       Date: t.date, Day: t.day, Session: t.session, Pair: t.pair,
       "Risk %": t.risk, Direction: t.direction, Entry: t.entry, Exit: t.exit, "R:R": t.rr, "Max R": t.max_r,
-      "PnL %": t.pnl_pct, "PnL $": t.pnl_usd, Result: t.result, Bias: t.bias_type, Rating: t.rating,
+      "PnL %": t.pnl_pct, "PnL $": t.pnl_usd, Result: t.result, Tags: t.tags,
       "Technical Notes": t.notes_technical, "Fundamental Notes": t.notes_fundamental, "Mistakes": t.notes_mistakes,
       "Exec Link": t.exec_link, "Bias Link": t.bias_link,
     }));
@@ -1068,7 +1165,7 @@ function Journal({ user, onLogout }) {
       const rows = (data || []).map(t => ({
         Date: t.date, Day: t.day, Session: t.session, Pair: t.pair,
         "Risk %": t.risk, Direction: t.direction, Entry: t.entry, Exit: t.exit, "R:R": t.rr, "Max R": t.max_r,
-        "PnL %": t.pnl_pct, "PnL $": t.pnl_usd, Result: t.result, Bias: t.bias_type, Rating: t.rating,
+        "PnL %": t.pnl_pct, "PnL $": t.pnl_usd, Result: t.result, Tags: t.tags,
         "Technical Notes": t.notes_technical, "Fundamental Notes": t.notes_fundamental, "Mistakes": t.notes_mistakes,
         "Exec Link": t.exec_link, "Bias Link": t.bias_link,
       }));
@@ -1116,7 +1213,7 @@ function Journal({ user, onLogout }) {
             <td class="pnl ${(t.pnl_pct || 0) >= 0 ? 'pos' : 'neg'}">${fmtPct(t.pnl_pct)}</td>
             <td class="pnl ${(t.pnl_usd || 0) >= 0 ? 'pos' : 'neg'}">${fmtUsd(t.pnl_usd)}</td>
             <td><span class="pill pill-${(t.result||'').toLowerCase()}">${esc(t.result)}</span></td>
-            <td>${esc(t.bias_type || '')}</td><td>${'★'.repeat(t.rating || 0)}</td>
+            <td>${esc(t.tags || '')}</td>
             <td class="notes-cell">
               ${(t.notes_technical || '').trim() ? `<div class="note"><b>Tech:</b> ${esc(t.notes_technical)}</div>` : ''}
               ${(t.notes_fundamental || '').trim() ? `<div class="note"><b>Fund:</b> ${esc(t.notes_fundamental)}</div>` : ''}
@@ -1159,7 +1256,7 @@ function Journal({ user, onLogout }) {
                   <thead><tr>
                     <th>Date</th><th>Day</th><th>Session</th><th>Pair</th><th>Dir</th><th>Risk</th>
                     <th>Entry</th><th>Exit</th><th>R:R</th><th>Max R</th><th>PnL %</th><th>PnL $</th>
-                    <th>Result</th><th>Bias</th><th>★</th><th>Notes</th>
+                    <th>Result</th><th>Tags</th><th>Notes</th>
                   </tr></thead>
                   <tbody>${tradeRows}</tbody>
                 </table>
@@ -1350,17 +1447,6 @@ function downloadJSON() {
       const peakD = new Date(lastPeakDate + "T12:00:00");
       daysSincePeak = Math.max(0, Math.floor((today - peakD) / (1000 * 60 * 60 * 24)));
     }
-    const byRating = {};
-    [1,2,3,4,5].forEach(r => { byRating[r] = { n: 0, w: 0, l: 0, pnl: 0 }; });
-    trades.forEach(t => {
-      const r = t.rating || 0;
-      if (byRating[r]) {
-        byRating[r].n++;
-        if (t.result === "Win") byRating[r].w++;
-        else if (t.result === "Loss") byRating[r].l++;
-        byRating[r].pnl += parseFloat(t.pnl_pct) || 0;
-      }
-    });
     const rValues = trades.map(realizedR).filter(v => v != null);
     const intendedRs = trades.map(t => parseRR(t.rr)).filter(v => v != null);
     const avgIntendedR = intendedRs.length ? intendedRs.reduce((s,v) => s+v, 0) / intendedRs.length : null;
@@ -1383,6 +1469,35 @@ function downloadJSON() {
       const worstLeft = [...mfeTrades].sort((a, b) => b.leftOnTable - a.leftOnTable).slice(0, 5).filter(x => x.leftOnTable > 0.1);
       exitQuality = { n: mfeTrades.length, coverage: totalWins > 0 ? (mfeTrades.length / totalWins) * 100 : 0, avgMFE, avgRealized: avgRealized2, captureRate, totalLeftOnTable, worstLeft };
     }
+
+    // TILT DETECTION — trade immediately after a loss
+    const chrono = [...trades].sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.created_at || "").localeCompare(b.created_at || ""));
+    const postLossTrades = [];
+    for (let i = 1; i < chrono.length; i++) {
+      if (chrono[i - 1].result === "Loss") postLossTrades.push(chrono[i]);
+    }
+    let tilt = null;
+    if (postLossTrades.length >= 5) { // need at least 5 to mean anything
+      const w = postLossTrades.filter(t => t.result === "Win").length;
+      const l = postLossTrades.filter(t => t.result === "Loss").length;
+      const wr = (w + l) > 0 ? (w / (w + l)) * 100 : null;
+      const pnl = postLossTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+      const avgPnl = pnl / postLossTrades.length;
+      // Baseline: overall WR for comparison
+      const baselineWR = wr; // we'll compute the diff against full S.wr where it's rendered
+      tilt = { n: postLossTrades.length, w, l, wr, pnl, avgPnl };
+    }
+
+    // PRESSED WINNERS — % of winners held to ≥80% of MFE
+    let pressed = null;
+    if (mfeTrades.length >= 5) {
+      const pressedHard = mfeTrades.filter(x => x.mfe > 0 && (x.realized / x.mfe) >= 0.8).length;
+      const pressedSoft = mfeTrades.filter(x => x.mfe > 0 && (x.realized / x.mfe) >= 0.5 && (x.realized / x.mfe) < 0.8).length;
+      const cutEarly = mfeTrades.length - pressedHard - pressedSoft;
+      const pressedPct = (pressedHard / mfeTrades.length) * 100;
+      pressed = { n: mfeTrades.length, pressedHard, pressedSoft, cutEarly, pressedPct };
+    }
+
     const yMin = Math.round(base * 0.88);
     const yMax = Math.round(base * 1.30);
 
@@ -1416,7 +1531,7 @@ function downloadJSON() {
       adherence = stats;
     }
 
-    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, byRating, avgIntendedR, avgRealizedR, exitQuality, adherence };
+    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, avgIntendedR, avgRealizedR, exitQuality, adherence, tilt, pressed };
   }, [trades, activeAccount, pairNames, checklistItems]);
 
   const filtered = useMemo(() => {
@@ -1426,16 +1541,14 @@ function downloadJSON() {
     if (fDay !== "All") list = list.filter(t => t.day === fDay);
     if (fSess !== "All") list = list.filter(t => t.session === fSess);
     if (fDir !== "All") list = list.filter(t => t.direction === fDir);
-    if (fBias !== "All") list = list.filter(t => t.bias_type === fBias);
-    if (fRating !== "All") list = list.filter(t => String(t.rating) === String(fRating));
     if (fTag !== "All") list = list.filter(t => (t.tags || "").split(",").map(s => s.trim().toLowerCase()).includes(fTag));
-    if (search) { const s = search.toLowerCase(); list = list.filter(t => [t.pair, t.session, t.direction, t.bias_type, t.notes_technical, t.notes_fundamental, t.notes_mistakes, t.date, t.day, t.tags].some(f => (f || "").toLowerCase().includes(s))); }
+    if (search) { const s = search.toLowerCase(); list = list.filter(t => [t.pair, t.session, t.direction, t.notes_technical, t.notes_fundamental, t.notes_mistakes, t.date, t.day, t.tags].some(f => (f || "").toLowerCase().includes(s))); }
     list.sort((a, b) => { let va = a[sortCol], vb = b[sortCol]; if (sortCol === "pnl_pct" || sortCol === "risk") { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; } if (va < vb) return sortDir === "asc" ? -1 : 1; if (va > vb) return sortDir === "asc" ? 1 : -1; return 0; });
     return list;
-  }, [trades, fPair, fResult, fDay, fSess, fDir, fBias, fRating, fTag, search, sortCol, sortDir]);
+  }, [trades, fPair, fResult, fDay, fSess, fDir, fTag, search, sortCol, sortDir]);
 
-  const clearFilters = () => { setFPair("All"); setFResult("All"); setFDay("All"); setFSess("All"); setFDir("All"); setFBias("All"); setFRating("All"); setFTag("All"); setSearch(""); };
-  const hasActiveFilters = fPair !== "All" || fResult !== "All" || fDay !== "All" || fSess !== "All" || fDir !== "All" || fBias !== "All" || fRating !== "All" || fTag !== "All" || search !== "";
+  const clearFilters = () => { setFPair("All"); setFResult("All"); setFDay("All"); setFSess("All"); setFDir("All"); setFTag("All"); setSearch(""); };
+  const hasActiveFilters = fPair !== "All" || fResult !== "All" || fDay !== "All" || fSess !== "All" || fDir !== "All" || fTag !== "All" || search !== "";
   const toggleSort = col => { if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol(col); setSortDir("desc"); } };
 
   const tabs = [
@@ -1512,7 +1625,6 @@ function downloadJSON() {
                       <Pill text={t.direction} />
                       <Pill text={t.result} />
                       <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{t.session}</span>
-                      <span style={{ fontSize: 10, color: T.amber, fontFamily: mono }}>{"★".repeat(t.rating || 0)}</span>
                     </div>
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       <span style={{ fontSize: 14, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
@@ -1527,7 +1639,6 @@ function downloadJSON() {
                     <div><span style={{ color: T.textLight }}>Exit:</span> {t.exit || "—"}</div>
                     <div><span style={{ color: T.textLight }}>R:R:</span> {t.rr || "—"}</div>
                     {t.result === "Win" && <div><span style={{ color: T.textLight }}>Max R:</span> {t.max_r || "—"}</div>}
-                    <div><span style={{ color: T.textLight }}>Bias:</span> {t.bias_type || "—"}</div>
                     {(() => {
                       const adh = computeAdherence(t, checklistItems);
                       if (!adh) return null;
@@ -1605,6 +1716,7 @@ function downloadJSON() {
 
             {tab === "dashboard" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <DailyPlan user={user} activeAccount={activeAccount} />
                 {!S ? (
                   <div style={{ ...cardS, padding: 60, textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }}>◈</div>
@@ -1897,6 +2009,78 @@ function downloadJSON() {
                     </div>
                   )}
 
+                  {/* TILT DETECTION + PRESSED WINNERS — The two retail killers */}
+                  {(S.tilt || S.pressed) && (
+                    <div style={{ ...cardS, padding: 18 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Behavior Patterns · The Two Retail Killers</span>
+                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Revenge trading & cutting winners early</span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+
+                        {/* TILT */}
+                        {S.tilt && (() => {
+                          const wrDelta = S.tilt.wr - S.wr;
+                          const isTilted = wrDelta < -10; // 10pp lower than baseline = tilt signal
+                          const color = isTilted ? T.red : wrDelta < -5 ? T.amber : T.green;
+                          return (
+                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 14 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                <span style={{ fontSize: 14 }}>🔥</span>
+                                <span style={{ fontSize: 11, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, fontWeight: 700 }}>Tilt Check · Trade After a Loss</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
+                                <div style={{ fontSize: 24, fontWeight: 700, color, fontFamily: mono, lineHeight: 1 }}>{S.tilt.wr != null ? `${S.tilt.wr.toFixed(0)}%` : "—"}</div>
+                                <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>WR · vs {S.wr.toFixed(0)}% baseline</div>
+                              </div>
+                              <div style={{ fontSize: 11, fontFamily: mono, color: T.textMid, marginBottom: 8 }}>
+                                {S.tilt.n} trades · <span style={{ color: T.green }}>{S.tilt.w}W</span> · <span style={{ color: T.red }}>{S.tilt.l}L</span> · <span style={{ color: cP(S.tilt.pnl), fontWeight: 600 }}>{fP(S.tilt.pnl)}</span>
+                              </div>
+                              <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, padding: "6px 8px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                                {isTilted ? <><strong style={{ color: T.red }}>⚠ Tilted.</strong> Post-loss trades underperform by {Math.abs(wrDelta).toFixed(0)}pp. Consider a "1-loss pause" rule.</>
+                                  : wrDelta < -5 ? <><strong style={{ color: T.amber }}>Caution.</strong> Slightly worse after losses ({wrDelta.toFixed(0)}pp). Watch this metric.</>
+                                  : <><strong style={{ color: T.green }}>Healthy.</strong> No tilt signal — you handle losses well.</>}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* PRESSED WINNERS */}
+                        {S.pressed && (() => {
+                          const p = S.pressed;
+                          const color = p.pressedPct >= 50 ? T.green : p.pressedPct >= 30 ? T.amber : T.red;
+                          return (
+                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 14 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                <span style={{ fontSize: 14 }}>🎯</span>
+                                <span style={{ fontSize: 11, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, fontWeight: 700 }}>Pressed Winners · Held to ≥80% of MFE</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
+                                <div style={{ fontSize: 24, fontWeight: 700, color, fontFamily: mono, lineHeight: 1 }}>{p.pressedPct.toFixed(0)}%</div>
+                                <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>of winners held strong</div>
+                              </div>
+                              <div style={{ fontSize: 11, fontFamily: mono, color: T.textMid, marginBottom: 8 }}>
+                                <span style={{ color: T.green }}>{p.pressedHard} pressed</span> · <span style={{ color: T.amber }}>{p.pressedSoft} partial</span> · <span style={{ color: T.red }}>{p.cutEarly} cut early</span> · {p.n} logged
+                              </div>
+                              <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, padding: "6px 8px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                                {p.pressedPct < 30 ? <><strong style={{ color: T.red }}>⚠ Cutting too early.</strong> Most winners exit before MFE. Small wins + big losses = no edge.</>
+                                  : p.pressedPct < 50 ? <><strong style={{ color: T.amber }}>Mixed.</strong> Some pressed, many cut. Try letting one runner per day go further.</>
+                                  : <><strong style={{ color: T.green }}>Pressing well.</strong> You're capturing most of the move when you're right.</>}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                      </div>
+                      {(!S.tilt || !S.pressed) && (
+                        <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, fontStyle: "italic", textAlign: "center" }}>
+                          {!S.tilt && "Tilt check needs 5+ post-loss trades. "}
+                          {!S.pressed && "Pressed winners needs 5+ wins with Max R filled in."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div style={{ ...cardS, padding: 18 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                       <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Recent Trades</span>
@@ -1996,12 +2180,6 @@ function downloadJSON() {
                       )}
                       <Field label="PnL %"><input type="number" step="0.01" value={form.pnl_pct} onChange={e => setForm({ ...form, pnl_pct: e.target.value })} style={inputS} /></Field>
                       <Field label="Result"><select value={form.result} onChange={e => { const newResult = e.target.value; setForm({ ...form, result: newResult, max_r: newResult === "Win" ? form.max_r : "" }); }} style={selectS}><option>Win</option><option>Loss</option><option>Breakeven</option></select></Field>
-                      <Field label="Bias Type"><select value={form.bias_type} onChange={e => setForm({ ...form, bias_type: e.target.value })} style={selectS}>{BIAS_TYPES.map(b => <option key={b}>{b}</option>)}</select></Field>
-                      <Field label="Rating">
-                        <div style={{ display: "flex", gap: 3, marginTop: 2 }}>
-                          {[1, 2, 3, 4, 5].map(r => (<button key={r} onClick={() => setForm({ ...form, rating: r })} style={{ width: 32, height: 32, borderRadius: 6, border: `1px solid ${T.border}`, background: form.rating >= r ? T.accentBg : T.cardAlt, color: form.rating >= r ? T.accent : T.textLight, cursor: "pointer", fontSize: 14 }}>★</button>))}
-                        </div>
-                      </Field>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 12 }}>
                       <Field label="Execution Link"><input type="url" value={form.exec_link} onChange={e => setForm({ ...form, exec_link: e.target.value })} placeholder="https://tradingview.com/..." style={inputS} /></Field>
@@ -2032,8 +2210,6 @@ function downloadJSON() {
                     <select value={fDir} onChange={e => setFDir(e.target.value)} style={{ ...selectS, width: 110, fontSize: 11, padding: "7px 10px" }}><option value="All">All Direction</option><option>Long</option><option>Short</option></select>
                     <select value={fSess} onChange={e => setFSess(e.target.value)} style={{ ...selectS, width: 120, fontSize: 11, padding: "7px 10px" }}><option value="All">All Sessions</option>{SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
                     <select value={fDay} onChange={e => setFDay(e.target.value)} style={{ ...selectS, width: 110, fontSize: 11, padding: "7px 10px" }}><option value="All">All Days</option>{DAYS_W.map(d => <option key={d} value={d}>{d}</option>)}</select>
-                    <select value={fBias} onChange={e => setFBias(e.target.value)} style={{ ...selectS, width: 130, fontSize: 11, padding: "7px 10px" }}><option value="All">All Bias</option>{BIAS_TYPES.map(b => <option key={b} value={b}>{b}</option>)}</select>
-                    <select value={fRating} onChange={e => setFRating(e.target.value)} style={{ ...selectS, width: 120, fontSize: 11, padding: "7px 10px" }}><option value="All">All Ratings</option>{[5,4,3,2,1].map(r => <option key={r} value={r}>{"★".repeat(r)} ({r})</option>)}</select>
                     {allTags.length > 0 && <select value={fTag} onChange={e => setFTag(e.target.value)} style={{ ...selectS, width: 130, fontSize: 11, padding: "7px 10px" }}><option value="All">All Tags</option>{allTags.map(t => <option key={t} value={t}>#{t}</option>)}</select>}
                     {hasActiveFilters && <button onClick={clearFilters} style={{ ...btnG, fontSize: 10, padding: "6px 12px", color: T.red, borderColor: T.red + "40" }}>✕ Clear</button>}
                     <div style={{ marginLeft: "auto", fontSize: 10, color: T.textLight, fontFamily: mono, display: "flex", alignItems: "center", gap: 8 }}>
@@ -2045,7 +2221,7 @@ function downloadJSON() {
                 <div style={{ ...cardS, overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono }}>
                     <thead><tr style={{ background: T.cardAlt }}>
-                      {[{ k: "date", l: "Date" }, { k: "day", l: "Day" }, { k: "session", l: "Session" }, { k: "pair", l: "Pair" }, { k: "direction", l: "Dir" }, { k: "risk", l: "Risk" }, { k: "entry", l: "Entry" }, { k: "exit", l: "Exit" }, { k: "rr", l: "R:R" }, { k: "max_r", l: "Max R" }, { k: "pnl_pct", l: "PnL" }, { k: "result", l: "Result" }, { k: "bias_type", l: "Bias" }, { k: "rating", l: "★" }].map(c => (
+                      {[{ k: "date", l: "Date" }, { k: "day", l: "Day" }, { k: "session", l: "Session" }, { k: "pair", l: "Pair" }, { k: "direction", l: "Dir" }, { k: "risk", l: "Risk" }, { k: "entry", l: "Entry" }, { k: "exit", l: "Exit" }, { k: "rr", l: "R:R" }, { k: "max_r", l: "Max R" }, { k: "pnl_pct", l: "PnL" }, { k: "result", l: "Result" }].map(c => (
                         <th key={c.k} onClick={() => toggleSort(c.k)} style={{ textAlign: "left", padding: "10px 7px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", borderBottom: `1px solid ${T.border}`, fontFamily: mono }}>{c.l}{sortCol === c.k ? (sortDir === "asc" ? " ↑" : " ↓") : ""}</th>
                       ))}
                       <th style={{ padding: "10px 7px", color: T.textLight, fontSize: 9, borderBottom: `1px solid ${T.border}`, fontFamily: mono }}>LINKS</th>
@@ -2105,7 +2281,7 @@ function downloadJSON() {
 
                             rows.push(
                               <tr key={"hdr-" + g.key} style={{ background: T.headerBg }}>
-                                <td colSpan={16} style={{ padding: "10px 12px", color: "#fff", fontFamily: mono, fontSize: 11, letterSpacing: 0.5 }}>
+                                <td colSpan={14} style={{ padding: "10px 12px", color: "#fff", fontFamily: mono, fontSize: 11, letterSpacing: 0.5 }}>
                                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                                     <span style={{ fontWeight: 700 }}>
                                       {groupBy === "week" ? "📅 " : "🗓️ "}{labelFor(g.key)}
@@ -2143,8 +2319,6 @@ function downloadJSON() {
                                   <span style={{ fontSize: 9, color: T.textLight }}>{fU(t.pnl_usd)}</span>
                                 </td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.result} /></td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.bias_type}</td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: T.amber }}>{"★".repeat(t.rating || 0)}</td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, whiteSpace: "nowrap" }}>
                                   {t.exec_link && <a href={t.exec_link} target="_blank" rel="noreferrer" style={{ color: T.blue, fontSize: 9, marginRight: 5, textDecoration: "none", fontWeight: 600 }}>Chart</a>}
                                   {t.bias_link && <a href={t.bias_link} target="_blank" rel="noreferrer" style={{ color: T.purple, fontSize: 9, textDecoration: "none", fontWeight: 600 }}>Bias</a>}
@@ -2236,24 +2410,14 @@ function downloadJSON() {
                   if (cum > peak) peak = cum;
                   if (peak - cum > dd) dd = peak - cum;
                 });
-                // Avg risk + mistake rate + rating split
+                // Avg risk + mistake rate
                 const avgRisk = mTrades.length ? mTrades.reduce((s, t) => s + (parseFloat(t.risk) || 0), 0) / mTrades.length : 0;
                 const mistakeCount = mTrades.filter(t => (t.notes_mistakes || "").trim()).length;
                 const mistakeRate = mTrades.length ? (mistakeCount / mTrades.length) * 100 : 0;
-                const avgRating = mTrades.length ? mTrades.reduce((s, t) => s + (parseInt(t.rating) || 0), 0) / mTrades.length : 0;
-                const highConv = mTrades.filter(t => (t.rating || 0) >= 4);
-                const lowConv = mTrades.filter(t => (t.rating || 0) <= 2 && (t.rating || 0) > 0);
-                const highW = highConv.filter(t => t.result === "Win").length;
-                const highL = highConv.filter(t => t.result === "Loss").length;
-                const lowW = lowConv.filter(t => t.result === "Win").length;
-                const lowL = lowConv.filter(t => t.result === "Loss").length;
-                const highWR = (highW + highL) > 0 ? (highW / (highW + highL)) * 100 : null;
-                const lowWR = (lowW + lowL) > 0 ? (lowW / (lowW + lowL)) * 100 : null;
 
                 monthMeta[m] = {
                   n: mTrades.length, w: wins.length, l: losses.length, wr, pnl, usd,
-                  best, worst, dd, avgRisk, mistakeCount, mistakeRate, avgRating,
-                  highConvN: highConv.length, highWR, lowConvN: lowConv.length, lowWR,
+                  best, worst, dd, avgRisk, mistakeCount, mistakeRate,
                 };
               });
 
@@ -2382,67 +2546,6 @@ function downloadJSON() {
                         </table>
                       </div>
                     )}
-                  </div>
-
-                  {/* 3. SETUP QUALITY DRIFT */}
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Setup Quality Drift</span>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Are your high-conviction trades still outperforming?</span>
-                    </div>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 600 }}>
-                        <thead>
-                          <tr style={{ background: T.cardAlt }}>
-                            <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Metric</th>
-                            {last6.map(m => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr style={{ background: T.card }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Avg Rating</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              const v = meta ? meta.avgRating : 0;
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.amber, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${v.toFixed(1)} ★` : "—"}</td>;
-                            })}
-                          </tr>
-                          <tr style={{ background: T.cardAlt }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>4-5★ Trades</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${meta.highConvN}` : "—"}</td>;
-                            })}
-                          </tr>
-                          <tr style={{ background: T.card }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>4-5★ Win Rate</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              const wr = meta ? meta.highWR : null;
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: wr != null && wr >= 50 ? T.green : wr != null ? T.red : T.textLight, fontWeight: 600 }}>{wr != null ? `${wr.toFixed(0)}%` : "—"}</td>;
-                            })}
-                          </tr>
-                          <tr style={{ background: T.cardAlt }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>1-2★ Trades</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${meta.lowConvN}` : "—"}</td>;
-                            })}
-                          </tr>
-                          <tr style={{ background: T.card }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>1-2★ Win Rate</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              const wr = meta ? meta.lowWR : null;
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: wr != null && wr >= 50 ? T.green : wr != null ? T.red : T.textLight, fontWeight: 600 }}>{wr != null ? `${wr.toFixed(0)}%` : "—"}</td>;
-                            })}
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                    <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                      <strong style={{ color: T.amber }}>Read:</strong> Your edge is real if 4-5★ WR consistently &gt; 1-2★ WR. If they converge or invert, your selection process has stopped working — review what changed.
-                    </div>
                   </div>
 
                   {/* 4. DISCIPLINE METRICS */}
