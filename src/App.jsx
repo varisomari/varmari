@@ -724,6 +724,7 @@ function Journal({ user, onLogout }) {
   const [sortDir, setSortDir] = useState("desc");
   const [search, setSearch] = useState("");
   const [groupBy, setGroupBy] = useState("none"); // none | week | month
+  const [calMonth, setCalMonth] = useState(new Date()); // month displayed on dashboard calendar
   const [exportingHTML, setExportingHTML] = useState(false);
 
   useEffect(() => {
@@ -1288,101 +1289,171 @@ function downloadJSON() {
                     <Stat icon="◷" label="Days Since Peak" value={S.daysSincePeak} sub={S.daysSincePeak === 0 ? "New peak today" : "days"} />
                     <Stat icon="≈" label="Avg Intended RR" value={S.avgIntendedR != null ? `1:${S.avgIntendedR.toFixed(2)}` : "—"} sub={S.avgRealizedR != null ? `Realized ${S.avgRealizedR >= 0 ? "+" : ""}${S.avgRealizedR.toFixed(2)}R` : "—"} />
                   </div>
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Equity Curve</span>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Range: ${(S.yMin/1000).toFixed(0)}k – ${(S.yMax/1000).toFixed(0)}k</span>
-                    </div>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <AreaChart data={S.eq}>
-                        <defs><linearGradient id="eqG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={S.tUsd >= 0 ? T.green : T.red} stopOpacity={0.2} /><stop offset="95%" stopColor={S.tUsd >= 0 ? T.green : T.red} stopOpacity={0} /></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                        <XAxis dataKey="date" tick={{ fontSize: 9, fill: T.textLight, fontFamily: mono }} tickLine={false} axisLine={{ stroke: T.border }} />
-                        <YAxis domain={[S.yMin, S.yMax]} tick={{ fontSize: 9, fill: T.textLight, fontFamily: mono }} tickLine={false} axisLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
-                        <Tooltip contentStyle={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, fontFamily: mono, fontSize: 11 }} formatter={v => [`$${v.toFixed(2)}`, "Balance"]} />
-                        <ReferenceLine y={S.base} stroke={T.textLight} strokeDasharray="4 4" label={{ value: `Start $${(S.base/1000).toFixed(0)}k`, position: "right", fontSize: 9, fill: T.textLight, fontFamily: mono }} />
-                        <Area type="monotone" dataKey="balance" stroke={S.tUsd >= 0 ? T.green : T.red} strokeWidth={2} fill="url(#eqG)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Performance by Rating</span>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Are your high-conviction setups actually better?</span>
-                    </div>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono }}>
-                        <thead><tr style={{ background: T.cardAlt }}>
-                          {["Rating", "Trades", "W", "L", "WR%", "Total PnL%", "Avg PnL%"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>{h}</th>)}
-                        </tr></thead>
-                        <tbody>
-                          {[5,4,3,2,1].map((r, i) => {
-                            const br = S.byRating[r];
-                            const wr = (br.w + br.l) > 0 ? (br.w / (br.w + br.l)) * 100 : 0;
-                            const avgPnl = br.n > 0 ? br.pnl / br.n : 0;
-                            return (
-                              <tr key={r} style={{ background: i % 2 === 0 ? T.card : T.cardAlt, opacity: br.n === 0 ? 0.4 : 1 }}>
-                                <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.amber }}>{"★".repeat(r)}</td>
-                                <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}` }}>{br.n}</td>
-                                <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.green }}>{br.w}</td>
-                                <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.red }}>{br.l}</td>
-                                <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: br.n > 0 && wr >= 50 ? T.green : br.n > 0 ? T.red : T.textLight, fontWeight: 600 }}>{br.n > 0 ? `${wr.toFixed(0)}%` : "—"}</td>
-                                <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(br.pnl), fontWeight: 600 }}>{br.n > 0 ? fP(br.pnl) : "—"}</td>
-                                <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(avgPnl) }}>{br.n > 0 ? fP(avgPnl) : "—"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Exit Quality (Winners Only)</span>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Did you close your winning trades too early?</span>
-                    </div>
-                    {!S.exitQuality ? (
-                      <div style={{ color: T.textLight, fontSize: 12, padding: 20, textAlign: "center", lineHeight: 1.6 }}>
-                        On winning trades, fill in <strong>"Max R Reached"</strong> to see exit quality stats.<br />
-                        <span style={{ fontSize: 11, opacity: 0.7 }}>Tracks gap between how far each winner went vs. where you exited.</span>
-                      </div>
-                    ) : (<>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 14 }}>
-                        <Stat icon="↗" label="Avg Win Peak" value={`${S.exitQuality.avgMFE >= 0 ? "+" : ""}${S.exitQuality.avgMFE.toFixed(2)}R`} color={T.green} sub="How far wins go" />
-                        <Stat icon="✓" label="Avg Win Exit" value={`${S.exitQuality.avgRealized >= 0 ? "+" : ""}${S.exitQuality.avgRealized.toFixed(2)}R`} color={cP(S.exitQuality.avgRealized)} sub="Where you closed" />
-                        <Stat icon="%" label="Capture Rate" value={S.exitQuality.captureRate != null ? `${S.exitQuality.captureRate.toFixed(0)}%` : "—"} color={S.exitQuality.captureRate != null && S.exitQuality.captureRate >= 60 ? T.green : S.exitQuality.captureRate != null && S.exitQuality.captureRate >= 40 ? T.amber : T.red} sub="of available move" />
-                        <Stat icon="✕" label="Left on Table" value={`-${S.exitQuality.totalLeftOnTable.toFixed(2)}R`} color={T.red} sub="total across trades" />
-                        <Stat icon="◧" label="Coverage" value={`${S.exitQuality.coverage.toFixed(0)}%`} sub={`${S.exitQuality.n} of ${S.w} wins logged`} />
-                      </div>
-                      {S.exitQuality.worstLeft.length > 0 && (
-                        <>
-                          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Biggest Misses · Trades where you exited furthest from peak</div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            {S.exitQuality.worstLeft.map(t => {
-                              const pct = (t.leftOnTable / t.mfe) * 100;
-                              return (
-                                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: T.cardAlt, borderRadius: 8, flexWrap: "wrap" }}>
-                                  <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, minWidth: 70 }}>{t.date}</span>
-                                  <Pill text={t.pair} type="pair" />
-                                  <Pill text={t.direction} />
-                                  <Pill text={t.result} />
-                                  <div style={{ flex: 1, minWidth: 200, display: "flex", alignItems: "center", gap: 6, fontFamily: mono, fontSize: 11 }}>
-                                    <span style={{ color: T.green, fontWeight: 600 }}>MFE +{t.mfe.toFixed(2)}R</span>
-                                    <span style={{ color: T.textLight }}>→</span>
-                                    <span style={{ color: cP(t.realized), fontWeight: 600 }}>{t.realized >= 0 ? "+" : ""}{t.realized.toFixed(2)}R</span>
-                                  </div>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: T.red, fontFamily: mono }}>−{t.leftOnTable.toFixed(2)}R left</span>
-                                    <span style={{ fontSize: 9, color: T.textLight, fontFamily: mono }}>({pct.toFixed(0)}% missed)</span>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                  {/* CALENDAR VIEW — replaces Equity Curve, Performance by Rating, Exit Quality */}
+                  {(() => {
+                    const year = calMonth.getFullYear();
+                    const monthIdx = calMonth.getMonth();
+                    const monthLabel = calMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+                    const firstOfMonth = new Date(year, monthIdx, 1);
+                    const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+                    const startWeekday = firstOfMonth.getDay(); // 0=Sun
+
+                    // Group this month's trades by day
+                    const byDay = {};
+                    trades.forEach(t => {
+                      if (!t.date) return;
+                      const d = parseLocalDate(t.date);
+                      if (d.getFullYear() === year && d.getMonth() === monthIdx) {
+                        const day = d.getDate();
+                        if (!byDay[day]) byDay[day] = [];
+                        byDay[day].push(t);
+                      }
+                    });
+
+                    // Build a flat array of cells, Sun→Sat, including blanks before day 1 and after last day
+                    const cells = [];
+                    for (let i = 0; i < startWeekday; i++) cells.push({ blank: true, key: "pre-" + i });
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const dayTrades = byDay[d] || [];
+                      const pnl = dayTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+                      const pnlPct = dayTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+                      const w = dayTrades.filter(t => t.result === "Win").length;
+                      const l = dayTrades.filter(t => t.result === "Loss").length;
+                      const wr = (w + l) > 0 ? (w / (w + l)) * 100 : 0;
+                      cells.push({ day: d, trades: dayTrades, pnl, pnlPct, wr, key: "d-" + d });
+                    }
+                    while (cells.length % 7 !== 0) cells.push({ blank: true, key: "post-" + cells.length });
+
+                    // Split into weeks (rows of 7); compute weekly summaries
+                    const weeks = [];
+                    for (let i = 0; i < cells.length; i += 7) {
+                      const row = cells.slice(i, i + 7);
+                      const wkTrades = row.filter(c => !c.blank).flatMap(c => c.trades);
+                      const wkPnl = wkTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+                      const wkDays = row.filter(c => !c.blank && c.trades.length > 0).length;
+                      weeks.push({ cells: row, pnl: wkPnl, days: wkDays, n: wkTrades.length });
+                    }
+
+                    // Month totals
+                    const monthTrades = Object.values(byDay).flat();
+                    const monthPnl = monthTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+                    const monthPnlPct = monthTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+                    const monthDays = Object.keys(byDay).length;
+
+                    const shiftMonth = (dir) => {
+                      const d = new Date(year, monthIdx + dir, 1);
+                      setCalMonth(d);
+                    };
+                    const today = new Date();
+                    const isCurrentMonth = today.getFullYear() === year && today.getMonth() === monthIdx;
+                    const todayDate = today.getDate();
+
+                    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+                    return (
+                      <div style={{ ...cardS, padding: 18 }}>
+                        {/* Header: month nav + month total */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <button onClick={() => shiftMonth(-1)} style={{ ...btnG, padding: "6px 12px" }}>←</button>
+                            <button onClick={() => setCalMonth(new Date())} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: isCurrentMonth ? T.textLight : T.accent, borderColor: isCurrentMonth ? T.border : T.accent + "60" }}>TODAY</button>
+                            <button onClick={() => shiftMonth(1)} style={{ ...btnG, padding: "6px 12px" }}>→</button>
+                            <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, marginLeft: 8 }}>{monthLabel}</span>
                           </div>
-                        </>
-                      )}
-                    </>)}
-                  </div>
+                          <div style={{ display: "flex", gap: 14, fontSize: 12, fontFamily: mono, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={{ color: T.textLight }}>Month:</span>
+                            <span style={{ color: cP(monthPnl), fontWeight: 700 }}>{fU(monthPnl)}</span>
+                            <span style={{ color: cP(monthPnlPct) }}>{fP(monthPnlPct)}</span>
+                            <span style={{ color: T.textMid }}>· {monthDays} trading {monthDays === 1 ? "day" : "days"}</span>
+                            <span style={{ color: T.textMid }}>· {monthTrades.length} {monthTrades.length === 1 ? "trade" : "trades"}</span>
+                          </div>
+                        </div>
+
+                        {/* Calendar grid + weekly summary column */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 130px", gap: 8 }}>
+                          {/* Calendar */}
+                          <div>
+                            {/* Weekday header */}
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+                              {dayNames.map(d => (
+                                <div key={d} style={{ textAlign: "center", fontSize: 10, color: T.textLight, fontFamily: mono, letterSpacing: 1, textTransform: "uppercase", padding: "6px 0" }}>{d}</div>
+                              ))}
+                            </div>
+                            {/* Week rows */}
+                            {weeks.map((wk, wi) => (
+                              <div key={"wk-" + wi} style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+                                {wk.cells.map(c => {
+                                  if (c.blank) return <div key={c.key} style={{ minHeight: 78, background: "transparent" }} />;
+                                  const hasTrades = c.trades.length > 0;
+                                  const isToday = isCurrentMonth && c.day === todayDate;
+                                  const bg = !hasTrades ? T.cardAlt
+                                    : c.pnl > 0 ? T.greenBg
+                                    : c.pnl < 0 ? T.redBg
+                                    : T.cardAlt;
+                                  const borderC = isToday ? T.accent
+                                    : !hasTrades ? T.borderLight
+                                    : c.pnl > 0 ? T.green + "40"
+                                    : c.pnl < 0 ? T.red + "40"
+                                    : T.border;
+                                  return (
+                                    <div key={c.key} title={hasTrades ? `${c.trades.length} trades · ${fU(c.pnl)} · ${c.wr.toFixed(0)}% WR` : ""}
+                                      style={{
+                                        minHeight: 78, padding: "6px 8px",
+                                        background: bg,
+                                        border: `${isToday ? 2 : 1}px solid ${borderC}`,
+                                        borderRadius: 8,
+                                        display: "flex", flexDirection: "column", justifyContent: "space-between",
+                                        cursor: hasTrades ? "pointer" : "default",
+                                      }}
+                                      onClick={() => hasTrades && setTab("log")}
+                                    >
+                                      <div style={{ fontSize: 11, fontWeight: 700, fontFamily: mono, color: isToday ? T.accent : (hasTrades ? T.text : T.textLight) }}>
+                                        {c.day}
+                                      </div>
+                                      {hasTrades && (
+                                        <div>
+                                          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: mono, color: c.pnl >= 0 ? T.green : T.red, lineHeight: 1.1 }}>
+                                            {c.pnl >= 0 ? "+" : "−"}${Math.abs(c.pnl).toFixed(0)}
+                                          </div>
+                                          <div style={{ fontSize: 9, color: T.textMid, fontFamily: mono, marginTop: 2 }}>
+                                            {c.trades.length} {c.trades.length === 1 ? "trade" : "trades"}
+                                          </div>
+                                          <div style={{ fontSize: 9, color: c.wr >= 50 ? T.green : T.red, fontFamily: mono, fontWeight: 600 }}>
+                                            {(c.trades.filter(t => t.result === "Win").length + c.trades.filter(t => t.result === "Loss").length) > 0 ? `${c.wr.toFixed(0)}%` : ""}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))}
+                          </div>
+                          {/* Weekly summary column */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <div style={{ textAlign: "center", fontSize: 10, color: T.textLight, fontFamily: mono, letterSpacing: 1, textTransform: "uppercase", padding: "6px 0" }}>Weekly</div>
+                            {weeks.map((wk, wi) => (
+                              <div key={"wsum-" + wi} style={{
+                                minHeight: 78, padding: "8px 10px",
+                                background: wk.n === 0 ? T.cardAlt : (wk.pnl >= 0 ? T.greenBg : T.redBg),
+                                border: `1px solid ${wk.n === 0 ? T.borderLight : (wk.pnl >= 0 ? T.green + "30" : T.red + "30")}`,
+                                borderRadius: 8,
+                                display: "flex", flexDirection: "column", justifyContent: "center",
+                              }}>
+                                <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, letterSpacing: 0.5 }}>Week {wi + 1}</div>
+                                <div style={{ fontSize: 15, fontWeight: 700, fontFamily: mono, color: wk.n === 0 ? T.textLight : (wk.pnl >= 0 ? T.green : T.red), lineHeight: 1.1, marginTop: 2 }}>
+                                  {wk.n === 0 ? "$0" : `${wk.pnl >= 0 ? "+" : "−"}$${Math.abs(wk.pnl).toFixed(0)}`}
+                                </div>
+                                <div style={{ fontSize: 10, color: T.textMid, fontFamily: mono, marginTop: 2 }}>
+                                  {wk.days} {wk.days === 1 ? "day" : "days"} · {wk.n}T
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
                     <div style={{ ...cardS, padding: 18 }}>
                       <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 12 }}>By Day</div>
