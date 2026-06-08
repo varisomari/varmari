@@ -964,11 +964,29 @@ function DisciplinePage({ user }) {
     setDays(d => ({ ...d, [dateISO]: { ...current, checks: newChecks } }));
     // Persist
     if (current.id) {
-      await supabase.from("discipline_days").update({ checks: newChecks, updated_at: new Date().toISOString() }).eq("id", current.id);
+      const { data, error } = await supabase.from("discipline_days")
+        .update({ checks: newChecks, updated_at: new Date().toISOString() })
+        .eq("id", current.id)
+        .select()
+        .single();
+      if (error) {
+        alert("Save failed: " + error.message);
+        // Revert
+        setDays(d => ({ ...d, [dateISO]: current }));
+        return;
+      }
+      // Confirm in-memory state matches DB
+      if (data) setDays(d => ({ ...d, [dateISO]: { id: data.id, checks: data.checks } }));
     } else {
-      const { data } = await supabase.from("discipline_days").insert({
+      const { data, error } = await supabase.from("discipline_days").insert({
         user_id: user.id, date: dateISO, checks: newChecks,
       }).select().single();
+      if (error) {
+        alert("Save failed: " + error.message);
+        // Revert
+        setDays(d => { const copy = { ...d }; delete copy[dateISO]; return copy; });
+        return;
+      }
       if (data) setDays(d => ({ ...d, [dateISO]: { id: data.id, checks: data.checks } }));
     }
   };
