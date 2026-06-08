@@ -500,35 +500,104 @@ function ChecklistModal({ items, onClose, onAdd, onUpdate, onDelete }) {
 }
 
 // ══════════════════════════════════════════
-// DAILY PLAN — pre-market intent & end-of-day review
+// DAILY PLAN PAGE — full journaling view
+// Browse any day, edit plan/bias/followed, see trades taken that day,
+// and scroll through past days like a real diary.
 // ══════════════════════════════════════════
-function DailyPlan({ user, activeAccount }) {
+function DailyPlanPage({ user, activeAccount, checklistItems, editTrade, setDayModal }) {
+  const [viewDate, setViewDate] = useState(new Date());
+  const viewDateISO = isoDate(viewDate);
   const todayISO = isoDate(new Date());
+  const isToday = viewDateISO === todayISO;
+  const isFuture = viewDateISO > todayISO;
+
   const [plan, setPlan] = useState({ plan_text: "", bias_text: "", followed: null });
   const [planId, setPlanId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
-  const [expanded, setExpanded] = useState(true);
+  const [dayTrades, setDayTrades] = useState([]);
 
+  // Past days list (last 30 days that have a plan OR trades)
+  const [pastDays, setPastDays] = useState([]);
+  const [pastLoaded, setPastLoaded] = useState(false);
+
+  // Load plan + trades for the viewed day
   useEffect(() => {
     if (!activeAccount) return;
     const load = async () => {
-      const { data } = await supabase.from("daily_plans")
+      const { data: planRow } = await supabase.from("daily_plans")
         .select("*")
         .eq("user_id", user.id)
         .eq("account_id", activeAccount.id)
-        .eq("date", todayISO)
+        .eq("date", viewDateISO)
         .maybeSingle();
-      if (data) {
-        setPlan({ plan_text: data.plan_text || "", bias_text: data.bias_text || "", followed: data.followed });
-        setPlanId(data.id);
+      if (planRow) {
+        setPlan({ plan_text: planRow.plan_text || "", bias_text: planRow.bias_text || "", followed: planRow.followed });
+        setPlanId(planRow.id);
       } else {
         setPlan({ plan_text: "", bias_text: "", followed: null });
         setPlanId(null);
       }
+      const { data: tradesRow } = await supabase.from("trades")
+        .select("*")
+        .eq("account_id", activeAccount.id)
+        .eq("date", viewDateISO)
+        .order("created_at", { ascending: true });
+      setDayTrades(tradesRow || []);
     };
     load();
-  }, [user.id, activeAccount?.id, todayISO]);
+  }, [user.id, activeAccount?.id, viewDateISO]);
+
+  // Load past days list
+  useEffect(() => {
+    if (!activeAccount) return;
+    const loadPast = async () => {
+      setPastLoaded(false);
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      const startISO = isoDate(start);
+      // Get all plans in last 30 days
+      const { data: planRows } = await supabase.from("daily_plans")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("account_id", activeAccount.id)
+        .gte("date", startISO)
+        .order("date", { ascending: false });
+      // Get all trades in last 30 days, group by date
+      const { data: tradeRows } = await supabase.from("trades")
+        .select("*")
+        .eq("account_id", activeAccount.id)
+        .gte("date", startISO);
+      const tradesByDate = {};
+      (tradeRows || []).forEach(t => {
+        if (!tradesByDate[t.date]) tradesByDate[t.date] = [];
+        tradesByDate[t.date].push(t);
+      });
+      // Build a unified set of dates: plans + any date with trades
+      const dateSet = new Set();
+      (planRows || []).forEach(p => dateSet.add(p.date));
+      Object.keys(tradesByDate).forEach(d => dateSet.add(d));
+      const planMap = {};
+      (planRows || []).forEach(p => { planMap[p.date] = p; });
+      const dates = [...dateSet].sort().reverse(); // newest first
+      const list = dates.map(d => ({
+        date: d,
+        plan: planMap[d] || null,
+        trades: tradesByDate[d] || [],
+      }));
+      setPastDays(list);
+      setPastLoaded(true);
+    };
+    loadPast();
+  }, [user.id, activeAccount?.id, planId, justSaved]);
+
+  const shiftDay = (dir) => {
+    const d = parseLocalDate(viewDateISO);
+    d.setDate(d.getDate() + dir);
+    if (isoDate(d) > todayISO) return; // don't go to future
+    setViewDate(d);
+  };
+  const goToday = () => setViewDate(new Date());
 
   const save = async (extra = {}) => {
     if (!activeAccount) return;
@@ -536,7 +605,7 @@ function DailyPlan({ user, activeAccount }) {
     const payload = {
       user_id: user.id,
       account_id: activeAccount.id,
-      date: todayISO,
+      date: viewDateISO,
       plan_text: plan.plan_text,
       bias_text: plan.bias_text,
       followed: plan.followed,
@@ -549,6 +618,7 @@ function DailyPlan({ user, activeAccount }) {
     setSaving(false);
     if (res.error) { alert("Plan save failed: " + res.error.message); return; }
     setPlanId(res.data.id);
+    if (extra.followed !== undefined) setPlan(p => ({ ...p, followed: extra.followed }));
     setJustSaved(true);
     setTimeout(() => setJustSaved(false), 1500);
   };
@@ -558,43 +628,562 @@ function DailyPlan({ user, activeAccount }) {
     await save({ followed: v });
   };
 
+  const dayLabel = (iso) => {
+    const d = parseLocalDate(iso);
+    return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  };
+  const shortDayLabel = (iso) => {
+    const d = parseLocalDate(iso);
+    return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  };
+
+  // Day stats
+  const dayStats = useMemo(() => {
+    if (dayTrades.length === 0) return null;
+    const wins = dayTrades.filter(t => t.result === "Win").length;
+    const losses = dayTrades.filter(t => t.result === "Loss").length;
+    const be = dayTrades.filter(t => t.result === "Breakeven").length;
+    const pnl = dayTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+    const usd = dayTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+    const wr = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : null;
+    return { wins, losses, be, pnl, usd, wr };
+  }, [dayTrades]);
+
   const hasPlan = (plan.plan_text || "").trim().length > 0 || (plan.bias_text || "").trim().length > 0;
-  const todayLabel = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
 
   return (
-    <div style={{ ...cardS, padding: 14 }}>
-      <div onClick={() => setExpanded(!expanded)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>📋 Today's Plan</span>
-          <span style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>{todayLabel}</span>
-          {!hasPlan && <span style={{ fontSize: 10, color: T.red, fontFamily: mono, fontWeight: 700, background: T.redBg, padding: "2px 8px", borderRadius: 4 }}>NO PLAN YET</span>}
-          {hasPlan && plan.followed === true && <span style={{ fontSize: 10, color: T.green, fontFamily: mono, fontWeight: 700, background: T.greenBg, padding: "2px 8px", borderRadius: 4 }}>✓ FOLLOWED</span>}
-          {hasPlan && plan.followed === false && <span style={{ fontSize: 10, color: T.red, fontFamily: mono, fontWeight: 700, background: T.redBg, padding: "2px 8px", borderRadius: 4 }}>✕ DEVIATED</span>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* DATE NAVIGATOR */}
+      <div style={{ ...cardS, padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => shiftDay(-1)} style={{ ...btnG, padding: "6px 12px" }}>← Prev</button>
+            <input type="date" value={viewDateISO} max={todayISO} onChange={e => { if (e.target.value) setViewDate(parseLocalDate(e.target.value)); }}
+              style={{ ...inputS, width: "auto", padding: "7px 10px", fontSize: 12, fontWeight: 600, minWidth: 150 }} />
+            <button onClick={() => shiftDay(1)} disabled={isToday || isFuture} style={{ ...btnG, padding: "6px 12px", opacity: (isToday || isFuture) ? 0.4 : 1, cursor: (isToday || isFuture) ? "not-allowed" : "pointer" }}>Next →</button>
+            <button onClick={goToday} disabled={isToday} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: isToday ? T.textLight : T.accent, borderColor: isToday ? T.border : T.accent + "60", marginLeft: 4 }}>TODAY</button>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700 }}>{dayLabel(viewDateISO)}</span>
+            {isToday && <span style={{ fontSize: 10, color: T.green, fontWeight: 700, fontFamily: mono, background: T.greenBg, padding: "2px 8px", borderRadius: 4 }}>● TODAY</span>}
+          </div>
         </div>
-        <span style={{ fontSize: 14, color: T.textMid, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 150ms" }}>›</span>
       </div>
-      {expanded && (
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
-            <Field label="Plan · what will you trade today">
-              <textarea value={plan.plan_text} onChange={e => setPlan({ ...plan, plan_text: e.target.value })} rows={3} placeholder="Pairs to watch, setups required, when to NOT trade..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 80 }} />
-            </Field>
-            <Field label="Bias · what's the market doing">
-              <textarea value={plan.bias_text} onChange={e => setPlan({ ...plan, bias_text: e.target.value })} rows={3} placeholder="Macro context, key levels, news risks..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 80 }} />
-            </Field>
+
+      {/* MAIN DAY CARD: plan + trades side by side on wide screens */}
+      <div style={{ ...cardS, padding: 18 }}>
+        {/* Day header with status */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 16, fontWeight: 700 }}>📋 Day Journal</span>
+            {!hasPlan && !dayTrades.length && <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, fontStyle: "italic" }}>Empty day — write a plan or log a trade</span>}
+            {hasPlan && plan.followed === true && <span style={{ fontSize: 10, color: T.green, fontFamily: mono, fontWeight: 700, background: T.greenBg, padding: "3px 10px", borderRadius: 4 }}>✓ FOLLOWED PLAN</span>}
+            {hasPlan && plan.followed === false && <span style={{ fontSize: 10, color: T.red, fontFamily: mono, fontWeight: 700, background: T.redBg, padding: "3px 10px", borderRadius: 4 }}>✕ DEVIATED FROM PLAN</span>}
+            {hasPlan && plan.followed === null && <span style={{ fontSize: 10, color: T.amber, fontFamily: mono, fontWeight: 700, background: T.amberBg, padding: "3px 10px", borderRadius: 4 }}>⌛ NOT REVIEWED</span>}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={() => save()} disabled={saving} style={{ ...btnP, padding: "7px 16px", fontSize: 11, opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>{saving ? "Saving..." : justSaved ? "✓ Saved" : (planId ? "Update Plan" : "Save Plan")}</button>
             {hasPlan && (
               <>
-                <span style={{ fontSize: 11, color: T.textMid, marginLeft: 8 }}>End of day:</span>
-                <button onClick={() => markFollowed(true)} style={{ ...btnG, fontSize: 11, padding: "6px 12px", color: plan.followed === true ? "#fff" : T.green, borderColor: T.green + "60", background: plan.followed === true ? T.green : "transparent" }}>✓ Followed</button>
-                <button onClick={() => markFollowed(false)} style={{ ...btnG, fontSize: 11, padding: "6px 12px", color: plan.followed === false ? "#fff" : T.red, borderColor: T.red + "60", background: plan.followed === false ? T.red : "transparent" }}>✕ Deviated</button>
+                <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>End-of-day:</span>
+                <button onClick={() => markFollowed(true)} style={{ ...btnG, fontSize: 11, padding: "5px 12px", color: plan.followed === true ? "#fff" : T.green, borderColor: T.green + "60", background: plan.followed === true ? T.green : "transparent" }}>✓ Followed</button>
+                <button onClick={() => markFollowed(false)} style={{ ...btnG, fontSize: 11, padding: "5px 12px", color: plan.followed === false ? "#fff" : T.red, borderColor: T.red + "60", background: plan.followed === false ? T.red : "transparent" }}>✕ Deviated</button>
               </>
             )}
+            <button onClick={() => save()} disabled={saving} style={{ ...btnP, padding: "7px 16px", fontSize: 11, opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>{saving ? "Saving..." : justSaved ? "✓ Saved" : (planId ? "Update Plan" : "Save Plan")}</button>
+          </div>
+        </div>
+
+        {/* Plan inputs */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.blue}`, borderRadius: 10, padding: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>◧ Plan · What to trade</div>
+            <textarea value={plan.plan_text} onChange={e => setPlan({ ...plan, plan_text: e.target.value })} rows={5} placeholder="Pairs to watch, setups required, when to NOT trade, max trades for the day..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 110, background: T.cardAlt }} />
+          </div>
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.purple}`, borderRadius: 10, padding: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>◎ Bias · Market context</div>
+            <textarea value={plan.bias_text} onChange={e => setPlan({ ...plan, bias_text: e.target.value })} rows={5} placeholder="Macro context, key levels, news risks, what the market is doing..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 110, background: T.cardAlt }} />
+          </div>
+        </div>
+
+        {/* Trades for the day */}
+        <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>
+              {dayTrades.length === 0 ? "Trades · None this day" : `Trades · ${dayTrades.length}`}
+            </span>
+            {dayStats && (
+              <div style={{ display: "flex", gap: 12, fontSize: 11, fontFamily: mono, flexWrap: "wrap" }}>
+                <span style={{ color: T.green }}>{dayStats.wins}W</span>
+                <span style={{ color: T.red }}>{dayStats.losses}L</span>
+                {dayStats.be > 0 && <span style={{ color: T.textMid }}>{dayStats.be}BE</span>}
+                {dayStats.wr != null && <span style={{ color: dayStats.wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{dayStats.wr.toFixed(0)}%</span>}
+                <span style={{ color: cP(dayStats.pnl), fontWeight: 700 }}>{fP(dayStats.pnl)}</span>
+                <span style={{ color: cP(dayStats.usd), fontWeight: 600 }}>{fU(dayStats.usd)}</span>
+              </div>
+            )}
+          </div>
+          {dayTrades.length === 0 ? (
+            <div style={{ padding: "20px 16px", background: T.cardAlt, borderRadius: 8, border: `1px dashed ${T.border}`, textAlign: "center" }}>
+              <div style={{ fontSize: 13, color: T.textMid, marginBottom: 4 }}>
+                {hasPlan ? "Planning day — no trades taken" : "No plan, no trades"}
+              </div>
+              <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>
+                {hasPlan ? "Discipline often looks like sitting on your hands. If the setup wasn't there, this is a win." : "Write a plan above to anchor the day."}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {dayTrades.map(t => {
+                const adh = computeAdherence(t, checklistItems);
+                return (
+                  <div key={t.id} style={{ background: T.cardAlt, border: `1px solid ${T.borderLight}`, borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <Pill text={t.pair} type="pair" />
+                      <Pill text={t.direction} />
+                      <Pill text={t.result} />
+                      <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{t.session}</span>
+                    </div>
+                    <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      {adh && <span style={{ fontSize: 10, fontFamily: mono, color: adh.pct === 100 ? T.green : adh.pct >= 70 ? T.amber : T.red, fontWeight: 700 }}>{adh.ticked}/{adh.total} rules</span>}
+                      <span style={{ fontSize: 13, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
+                      <span style={{ fontSize: 11, fontFamily: mono, color: cP(t.pnl_usd) }}>{fU(t.pnl_usd)}</span>
+                      <button onClick={() => editTrade(t)} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* PAST DAYS — last 30 days timeline */}
+      <div style={{ ...cardS, padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Past 30 Days · Click any day to open</span>
+          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>{pastDays.length} {pastDays.length === 1 ? "entry" : "entries"}</span>
+        </div>
+        {!pastLoaded ? (
+          <div style={{ padding: 20, color: T.textLight, fontSize: 12, textAlign: "center" }}>Loading...</div>
+        ) : pastDays.length === 0 ? (
+          <div style={{ padding: 20, color: T.textLight, fontSize: 12, textAlign: "center" }}>No history yet. Start writing daily plans.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {pastDays.map(d => {
+              const hasP = (d.plan && ((d.plan.plan_text || "").trim() || (d.plan.bias_text || "").trim()));
+              const nT = d.trades.length;
+              const pnl = d.trades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+              const usd = d.trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+              const w = d.trades.filter(t => t.result === "Win").length;
+              const l = d.trades.filter(t => t.result === "Loss").length;
+              const isSelected = d.date === viewDateISO;
+              const followed = d.plan ? d.plan.followed : null;
+              return (
+                <div key={d.date} onClick={() => setViewDate(parseLocalDate(d.date))} style={{
+                  padding: "10px 14px",
+                  background: isSelected ? T.accentBg : T.cardAlt,
+                  border: `1px solid ${isSelected ? T.accent : T.borderLight}`,
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}>
+                  <div style={{ minWidth: 140, fontFamily: mono, fontSize: 12, fontWeight: 600 }}>
+                    {shortDayLabel(d.date)}
+                    {d.date === todayISO && <span style={{ marginLeft: 6, fontSize: 9, color: T.green, fontWeight: 700 }}>● TODAY</span>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    {hasP ? <span style={{ fontSize: 9, color: T.blue, fontFamily: mono, fontWeight: 700, background: T.blueBg, padding: "2px 6px", borderRadius: 3 }}>📋 PLAN</span>
+                          : <span style={{ fontSize: 9, color: T.textLight, fontFamily: mono, fontWeight: 700, background: T.cardAlt, padding: "2px 6px", borderRadius: 3 }}>NO PLAN</span>}
+                    {followed === true && <span style={{ fontSize: 9, color: T.green, fontFamily: mono, fontWeight: 700 }}>✓</span>}
+                    {followed === false && <span style={{ fontSize: 9, color: T.red, fontFamily: mono, fontWeight: 700 }}>✕</span>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {nT === 0 ? <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, fontStyle: "italic" }}>No trades</span>
+                      : <>
+                        <span style={{ fontSize: 11, fontFamily: mono, color: T.textMid }}>{nT}T</span>
+                        <span style={{ fontSize: 10, color: T.green, fontFamily: mono }}>{w}W</span>
+                        <span style={{ fontSize: 10, color: T.red, fontFamily: mono }}>{l}L</span>
+                      </>}
+                  </div>
+                  {nT > 0 && (
+                    <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, fontFamily: mono, color: cP(pnl) }}>{fP(pnl)}</span>
+                      <span style={{ fontSize: 11, fontFamily: mono, color: cP(usd) }}>{fU(usd)}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+// Old small widget kept as a noop placeholder in case anything imports it — safe to delete later
+function DailyPlan() { return null; }
+
+// ══════════════════════════════════════════
+// DISCIPLINE TRACKER — month-paginated daily habit grid
+// Default fields: discipline, happy, confident, tactical
+// User can add/remove custom fields (pray, gym, etc.) via Manage modal
+// ══════════════════════════════════════════
+const DEFAULT_DISCIPLINE_FIELDS = [
+  { key: "discipline", label: "Discipline" },
+  { key: "happy", label: "Happy" },
+  { key: "confident", label: "Confident" },
+  { key: "tactical", label: "Tactical" },
+];
+
+function DisciplineFieldsModal({ fields, onClose, onAdd, onUpdate, onDelete }) {
+  const [newLabel, setNewLabel] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const handleAdd = async () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    await onAdd(label);
+    setNewLabel("");
+  };
+  const handleStartEdit = (f) => { setEditingId(f.id); setEditValue(f.label); };
+  const handleSaveEdit = async () => { if (!editValue.trim()) return; await onUpdate(editingId, editValue.trim()); setEditingId(null); setEditValue(""); };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 20 }}>
+      <div style={{ ...cardS, padding: 24, width: "100%", maxWidth: 540, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 16, fontWeight: 700 }}>Discipline Fields</span>
+          <button onClick={onClose} style={btnG}>✕</button>
+        </div>
+        <div style={{ fontSize: 11, color: T.textMid, marginBottom: 16, lineHeight: 1.5, fontFamily: mono }}>
+          Add or rename the daily checkboxes you want to track. Examples: Pray, Gym, Read, Meditate, No-screen-morning, Journal.
+        </div>
+        <div style={{ borderBottom: `1px solid ${T.border}`, paddingBottom: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Add New Field</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="text" value={newLabel} onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} placeholder="e.g. Gym" style={inputS} />
+            <button onClick={handleAdd} style={{ ...btnP, padding: "9px 16px", whiteSpace: "nowrap" }}>+ Add</button>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Your Fields ({fields.length})</div>
+          {fields.map((f, idx) => (
+            <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: T.cardAlt, borderRadius: 8, marginBottom: 4 }}>
+              {editingId === f.id ? (
+                <>
+                  <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginRight: 8 }}>{idx + 1}.</span>
+                  <input type="text" value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSaveEdit(); if (e.key === "Escape") { setEditingId(null); setEditValue(""); } }} autoFocus style={{ ...inputS, flex: 1, marginRight: 8 }} />
+                  <button onClick={handleSaveEdit} style={{ ...btnG, fontSize: 11, padding: "5px 12px", color: T.green, borderColor: T.green + "40" }}>Save</button>
+                  <button onClick={() => { setEditingId(null); setEditValue(""); }} style={{ ...btnG, fontSize: 11, padding: "5px 10px", marginLeft: 4 }}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                    <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>{idx + 1}.</span>
+                    <span style={{ fontSize: 13, color: T.text }}>{f.label}</span>
+                    <span style={{ fontSize: 9, color: T.textLight, fontFamily: mono }}>({f.key})</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => handleStartEdit(f)} style={{ ...btnG, fontSize: 10, padding: "4px 10px" }}>Edit</button>
+                    <button onClick={() => onDelete(f.id)} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.red, borderColor: T.red + "40" }}>Delete</button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DisciplinePage({ user }) {
+  const [viewMonth, setViewMonth] = useState(new Date()); // first of viewed month
+  const [fields, setFields] = useState([]);
+  const [showFieldsModal, setShowFieldsModal] = useState(false);
+  const [days, setDays] = useState({}); // { 'YYYY-MM-DD': { checks: {...}, id } }
+  const [loading, setLoading] = useState(true);
+
+  const year = viewMonth.getFullYear();
+  const monthIdx = viewMonth.getMonth();
+  const monthLabel = viewMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  const today = new Date();
+  const todayISO = isoDate(today);
+  const isCurrentMonth = year === today.getFullYear() && monthIdx === today.getMonth();
+
+  // Load fields (seed defaults if empty)
+  useEffect(() => {
+    const loadFields = async () => {
+      const { data } = await supabase.from("discipline_fields")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("sort_order", { ascending: true });
+      if (data && data.length > 0) {
+        setFields(data);
+      } else {
+        // Seed default 4 fields
+        const seed = DEFAULT_DISCIPLINE_FIELDS.map((f, i) => ({
+          user_id: user.id, key: f.key, label: f.label, sort_order: i,
+        }));
+        const { data: seeded } = await supabase.from("discipline_fields").insert(seed).select();
+        setFields((seeded || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+      }
+    };
+    loadFields();
+  }, [user.id]);
+
+  // Load days for the current viewed month
+  useEffect(() => {
+    const loadDays = async () => {
+      setLoading(true);
+      const firstISO = isoDate(new Date(year, monthIdx, 1));
+      const lastISO = isoDate(new Date(year, monthIdx + 1, 0));
+      const { data } = await supabase.from("discipline_days")
+        .select("*")
+        .eq("user_id", user.id)
+        .gte("date", firstISO)
+        .lte("date", lastISO);
+      const map = {};
+      (data || []).forEach(row => { map[row.date] = { id: row.id, checks: row.checks || {} }; });
+      setDays(map);
+      setLoading(false);
+    };
+    loadDays();
+  }, [user.id, year, monthIdx]);
+
+  // Toggle a checkbox for a specific date + field
+  const toggleCheck = async (dateISO, fieldKey) => {
+    const current = days[dateISO] || { id: null, checks: {} };
+    const newChecks = { ...current.checks, [fieldKey]: !current.checks[fieldKey] };
+    // Optimistic update
+    setDays(d => ({ ...d, [dateISO]: { ...current, checks: newChecks } }));
+    // Persist
+    if (current.id) {
+      await supabase.from("discipline_days").update({ checks: newChecks, updated_at: new Date().toISOString() }).eq("id", current.id);
+    } else {
+      const { data } = await supabase.from("discipline_days").insert({
+        user_id: user.id, date: dateISO, checks: newChecks,
+      }).select().single();
+      if (data) setDays(d => ({ ...d, [dateISO]: { id: data.id, checks: data.checks } }));
+    }
+  };
+
+  // Field CRUD
+  const addField = async (label) => {
+    // Generate a key from label
+    const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 32);
+    if (!key) { alert("Field name must contain letters or numbers."); return; }
+    if (fields.some(f => f.key === key)) { alert("A field with that name already exists."); return; }
+    const nextOrder = fields.length > 0 ? Math.max(...fields.map(f => f.sort_order || 0)) + 1 : 0;
+    const { data, error } = await supabase.from("discipline_fields").insert({
+      user_id: user.id, key, label, sort_order: nextOrder,
+    }).select().single();
+    if (error) { alert("Error: " + error.message); return; }
+    setFields(p => [...p, data]);
+  };
+  const updateField = async (id, newLabel) => {
+    const { data, error } = await supabase.from("discipline_fields").update({ label: newLabel }).eq("id", id).select().single();
+    if (error) { alert("Error: " + error.message); return; }
+    setFields(p => p.map(x => x.id === id ? data : x));
+  };
+  const deleteField = async (id) => {
+    const f = fields.find(x => x.id === id);
+    if (!confirm(`Delete "${f?.label}"? Historical checks for this field stay in the database but won't show in the grid.`)) return;
+    await supabase.from("discipline_fields").delete().eq("id", id);
+    setFields(p => p.filter(x => x.id !== id));
+  };
+
+  const shiftMonth = (dir) => setViewMonth(new Date(year, monthIdx + dir, 1));
+  const goCurrent = () => setViewMonth(new Date());
+
+  // Build rows for the viewed month
+  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+  const monthRows = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, monthIdx, d, 12, 0, 0, 0);
+    const iso = isoDate(date);
+    const dow = date.getDay(); // 0=Sun, 6=Sat
+    const isWeekend = dow === 0 || dow === 6;
+    const isFuture = iso > todayISO;
+    monthRows.push({ iso, date, dow, isWeekend, isToday: iso === todayISO, isFuture });
+  }
+
+  // Month-level progress (only count days up to today within the viewed month)
+  const monthProgress = useMemo(() => {
+    if (fields.length === 0) return null;
+    const relevant = monthRows.filter(r => !r.isFuture);
+    if (relevant.length === 0) return null;
+    let ticked = 0;
+    const total = relevant.length * fields.length;
+    relevant.forEach(r => {
+      const checks = (days[r.iso] || {}).checks || {};
+      fields.forEach(f => { if (checks[f.key]) ticked++; });
+    });
+    return { ticked, total, pct: total > 0 ? (ticked / total) * 100 : 0, daysCounted: relevant.length };
+  }, [monthRows, fields, days]);
+
+  // Year-level progress (only count days up to today across the whole year)
+  // Note: this only loads the current month into `days`; we'd need a separate query for full-year.
+  // For simplicity, we show month progress only. Year metric would require another endpoint.
+
+  // Per-field streak for current month (consecutive days ticked, working back from today)
+  const fieldStreaks = useMemo(() => {
+    const result = {};
+    fields.forEach(f => {
+      let streak = 0;
+      const d = new Date();
+      // Only count if we're viewing the current month or any past month — streaks count consecutively from today back
+      while (true) {
+        const iso = isoDate(d);
+        // Only count back as far as the start of the viewed month for display purposes
+        if (d.getFullYear() < year || (d.getFullYear() === year && d.getMonth() < monthIdx)) break;
+        const checks = (days[iso] || {}).checks || {};
+        if (checks[f.key]) {
+          streak++;
+          d.setDate(d.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+      result[f.key] = streak;
+    });
+    return result;
+  }, [fields, days, year, monthIdx]);
+
+  const dayNameShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {showFieldsModal && (
+        <DisciplineFieldsModal
+          fields={fields}
+          onClose={() => setShowFieldsModal(false)}
+          onAdd={addField}
+          onUpdate={updateField}
+          onDelete={deleteField}
+        />
+      )}
+
+      {/* HEADER: month nav + progress + manage button */}
+      <div style={{ ...cardS, padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => shiftMonth(-1)} style={{ ...btnG, padding: "6px 12px" }}>←</button>
+            <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, padding: "0 12px", minWidth: 180, textAlign: "center" }}>{monthLabel}</span>
+            <button onClick={() => shiftMonth(1)} style={{ ...btnG, padding: "6px 12px" }}>→</button>
+            <button onClick={goCurrent} disabled={isCurrentMonth} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: isCurrentMonth ? T.textLight : T.accent, borderColor: isCurrentMonth ? T.border : T.accent + "60", marginLeft: 6 }}>THIS MONTH</button>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {monthProgress && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", fontFamily: mono, fontSize: 12 }}>
+                <span style={{ color: T.textLight }}>Progress:</span>
+                <span style={{ color: monthProgress.pct >= 70 ? T.green : monthProgress.pct >= 40 ? T.amber : T.red, fontWeight: 700 }}>
+                  {monthProgress.ticked} / {monthProgress.total}
+                </span>
+                <span style={{ color: monthProgress.pct >= 70 ? T.green : monthProgress.pct >= 40 ? T.amber : T.red, fontWeight: 700 }}>
+                  ({monthProgress.pct.toFixed(0)}%)
+                </span>
+                <span style={{ color: T.textLight, fontSize: 10 }}>· {monthProgress.daysCounted} days counted</span>
+              </div>
+            )}
+            <button onClick={() => setShowFieldsModal(true)} style={{ ...btnG, padding: "6px 12px", fontSize: 11 }}>⚙ Manage Fields ({fields.length})</button>
+          </div>
+        </div>
+      </div>
+
+      {/* PER-FIELD STREAKS (only meaningful when viewing current month) */}
+      {isCurrentMonth && fields.length > 0 && (
+        <div style={{ ...cardS, padding: 14 }}>
+          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 10 }}>Current Streaks · Consecutive days ticked from today</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+            {fields.map(f => {
+              const s = fieldStreaks[f.key] || 0;
+              const color = s >= 7 ? T.green : s >= 3 ? T.amber : s > 0 ? T.text : T.textLight;
+              return (
+                <div key={f.key} style={{ background: T.cardAlt, borderRadius: 8, padding: "10px 12px", border: `1px solid ${T.borderLight}` }}>
+                  <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.5, textTransform: "uppercase", fontFamily: mono, marginBottom: 4 }}>{f.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: mono, color, lineHeight: 1 }}>{s}</div>
+                  <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 2 }}>{s === 1 ? "day" : "days"}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
+
+      {/* MAIN GRID */}
+      <div style={{ ...cardS, padding: 0, overflow: "hidden" }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: "center", color: T.textLight, fontSize: 12 }}>Loading...</div>
+        ) : fields.length === 0 ? (
+          <div style={{ padding: 40, textAlign: "center", color: T.textLight, fontSize: 13 }}>
+            No fields defined. Click <strong>⚙ Manage Fields</strong> to add some.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: mono, minWidth: 400 + fields.length * 80 }}>
+              <thead>
+                <tr style={{ background: T.headerBg }}>
+                  <th style={{ textAlign: "left", padding: "12px 16px", color: "rgba(255,255,255,0.7)", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", position: "sticky", top: 0, background: T.headerBg, minWidth: 160 }}>Date</th>
+                  {fields.map(f => (
+                    <th key={f.key} style={{ textAlign: "center", padding: "12px 8px", color: "#fff", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", position: "sticky", top: 0, background: T.headerBg, minWidth: 80 }}>
+                      {f.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {monthRows.map(r => {
+                  const checks = (days[r.iso] || {}).checks || {};
+                  const rowBg = r.isToday ? T.accentBg : r.isWeekend ? T.cardAlt : T.card;
+                  const dateColor = r.isToday ? T.accent : r.isFuture ? T.textLight : r.isWeekend ? T.textMid : T.text;
+                  return (
+                    <tr key={r.iso} style={{ background: rowBg, borderBottom: `1px solid ${T.borderLight}` }}>
+                      <td style={{ padding: "10px 16px", fontWeight: r.isToday ? 700 : 500, color: dateColor }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontFamily: mono, fontSize: 11, color: T.textLight, minWidth: 30 }}>{dayNameShort[r.dow]}</span>
+                          <span style={{ fontFamily: mono, fontSize: 13 }}>{String(r.date.getDate()).padStart(2, "0")}</span>
+                          {r.isToday && <span style={{ fontSize: 9, color: T.accent, fontWeight: 700, fontFamily: mono, background: T.card, padding: "1px 6px", borderRadius: 3, marginLeft: 4 }}>● TODAY</span>}
+                          {r.isWeekend && !r.isToday && <span style={{ fontSize: 9, color: T.textLight, fontFamily: mono, marginLeft: 4 }}>weekend</span>}
+                        </div>
+                      </td>
+                      {fields.map(f => {
+                        const isChecked = !!checks[f.key];
+                        return (
+                          <td key={f.key} style={{ textAlign: "center", padding: "10px 8px" }}>
+                            <div
+                              onClick={() => !r.isFuture && toggleCheck(r.iso, f.key)}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center", justifyContent: "center",
+                                width: 22, height: 22,
+                                borderRadius: 5,
+                                background: isChecked ? T.green : (r.isFuture ? T.cardAlt : T.card),
+                                border: `1.5px solid ${isChecked ? T.green : (r.isFuture ? T.borderLight : T.border)}`,
+                                cursor: r.isFuture ? "not-allowed" : "pointer",
+                                color: "#fff", fontSize: 13, fontWeight: 700,
+                                opacity: r.isFuture ? 0.4 : 1,
+                                transition: "all 120ms",
+                              }}
+                            >
+                              {isChecked ? "✓" : ""}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -602,8 +1191,10 @@ function DailyPlan({ user, activeAccount }) {
 // ══════════════════════════════════════════
 // RECAP TAB
 // ══════════════════════════════════════════
-function RecapTab({ user, accounts, activeAccount }) {
-  const [periodType, setPeriodType] = useState("week");
+function RecapTab({ user, accounts, activeAccount, lockedPeriodType }) {
+  const [periodType, setPeriodType] = useState(lockedPeriodType || "week");
+  // When locked, force the period type whenever the lock changes
+  useEffect(() => { if (lockedPeriodType) setPeriodType(lockedPeriodType); }, [lockedPeriodType]);
   const [periodDate, setPeriodDate] = useState(new Date());
   const [recap, setRecap] = useState(emptyRecap());
   const [recapId, setRecapId] = useState(null);
@@ -810,10 +1401,12 @@ ${tradeMistakes.length === 0 ? '<div class="empty">No trade mistakes logged in t
       {/* COMPACT TOP BAR */}
       <div style={{ ...cardS, padding: 14 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 0 }}>
-            <button onClick={() => setPeriodType("week")} style={{ ...btnG, padding: "7px 14px", background: periodType === "week" ? T.accent : "transparent", color: periodType === "week" ? "#fff" : T.textMid, borderColor: periodType === "week" ? T.accent : T.border, borderRadius: "8px 0 0 8px" }}>Weekly</button>
-            <button onClick={() => setPeriodType("month")} style={{ ...btnG, padding: "7px 14px", background: periodType === "month" ? T.accent : "transparent", color: periodType === "month" ? "#fff" : T.textMid, borderColor: periodType === "month" ? T.accent : T.border, borderRadius: "0 8px 8px 0", borderLeft: "none" }}>Monthly</button>
-          </div>
+          {!lockedPeriodType && (
+            <div style={{ display: "flex", gap: 0 }}>
+              <button onClick={() => setPeriodType("week")} style={{ ...btnG, padding: "7px 14px", background: periodType === "week" ? T.accent : "transparent", color: periodType === "week" ? "#fff" : T.textMid, borderColor: periodType === "week" ? T.accent : T.border, borderRadius: "8px 0 0 8px" }}>Weekly</button>
+              <button onClick={() => setPeriodType("month")} style={{ ...btnG, padding: "7px 14px", background: periodType === "month" ? T.accent : "transparent", color: periodType === "month" ? "#fff" : T.textMid, borderColor: periodType === "month" ? T.accent : T.border, borderRadius: "0 8px 8px 0", borderLeft: "none" }}>Monthly</button>
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <button onClick={() => shiftPeriod(-1)} style={{ ...btnG, padding: "6px 10px" }}>←</button>
             <div style={{ fontFamily: mono, fontSize: 12, fontWeight: 600, padding: "0 10px", minWidth: 220, textAlign: "center" }}>
@@ -988,6 +1581,7 @@ function Journal({ user, onLogout }) {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showPairsModal, setShowPairsModal] = useState(false);
   const [tab, setTab] = useState("dashboard");
+  const [dailySubTab, setDailySubTab] = useState("daily"); // daily | weekly | monthly
   const [page, setPage] = useState("journal");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyTrade());
@@ -1556,7 +2150,8 @@ function downloadJSON() {
     { k: "log", l: "Trade Log", i: "☰" },
     { k: "pairs", l: "Pairs", i: "⟡" },
     { k: "monthly", l: "Monthly", i: "▣" },
-    { k: "recap", l: "Recap", i: "✎" },
+    { k: "recap", l: "Daily", i: "📋" },
+    { k: "discipline", l: "Discipline", i: "✓" },
   ];
   const navStyle = (active) => ({
     background: "none", border: "none", color: active ? "#fff" : "rgba(255,255,255,0.5)",
@@ -1716,7 +2311,6 @@ function downloadJSON() {
 
             {tab === "dashboard" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <DailyPlan user={user} activeAccount={activeAccount} />
                 {!S ? (
                   <div style={{ ...cardS, padding: 60, textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }}>◈</div>
@@ -2766,7 +3360,30 @@ function downloadJSON() {
               );
             })() : tab === "monthly" && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No monthly data</div>}
 
-            {tab === "recap" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} />}
+            {tab === "recap" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* Sub-tab navigation */}
+                <div style={{ ...cardS, padding: 4, display: "flex", gap: 4, alignSelf: "flex-start" }}>
+                  {[
+                    { k: "daily", l: "📋 Daily Plan" },
+                    { k: "weekly", l: "📅 Weekly Recap" },
+                    { k: "monthly", l: "🗓️ Monthly Recap" },
+                  ].map(s => (
+                    <button key={s.k} onClick={() => setDailySubTab(s.k)} style={{
+                      padding: "8px 16px", fontSize: 12, fontWeight: 600, fontFamily: font,
+                      border: "none", borderRadius: 6, cursor: "pointer",
+                      background: dailySubTab === s.k ? T.accent : "transparent",
+                      color: dailySubTab === s.k ? "#fff" : T.textMid,
+                    }}>{s.l}</button>
+                  ))}
+                </div>
+                {dailySubTab === "daily" && <DailyPlanPage user={user} activeAccount={activeAccount} checklistItems={checklistItems} editTrade={editTrade} setDayModal={setDayModal} />}
+                {dailySubTab === "weekly" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} lockedPeriodType="week" />}
+                {dailySubTab === "monthly" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} lockedPeriodType="month" />}
+              </div>
+            )}
+
+            {tab === "discipline" && <DisciplinePage user={user} />}
 
           </div>
         </>
