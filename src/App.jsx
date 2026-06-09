@@ -22,15 +22,15 @@ const DAYS_W = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
 const BIAS_TYPES = ["Transition","Re-Transition","Confirmation","Continuation","None"];
 
 const T = {
-  bg: "#F5F0E8", card: "#FFFFFF", cardAlt: "#FAF8F4", border: "#E8E0D4",
-  borderLight: "#F0EBE3", text: "#2C2418", textMid: "#6B5D4F", textLight: "#9C8E7E",
-  accent: "#C47A3B", accentBg: "#FDF3E8", green: "#1A8754", greenBg: "#E8F5EE",
-  red: "#C4342A", redBg: "#FDF0EF", blue: "#2563EB", blueBg: "#EFF4FF",
+  bg: "#FBFAF6", card: "#FFFFFF", cardAlt: "#FAFAF7", border: "#E8E2D5",
+  borderLight: "#F0EDE3", text: "#1A1A1A", textMid: "#6B6557", textLight: "#A8A293",
+  accent: "#C97140", accentBg: "#FCF7EF", green: "#1F7A48", greenBg: "#ECF7F0",
+  red: "#B73A2C", redBg: "#FBEEEC", blue: "#2563EB", blueBg: "#EFF4FF",
   purple: "#7C3AED", purpleBg: "#F3EEFF", amber: "#B45309", amberBg: "#FEF9E8",
-  headerBg: "#2C2418",
+  headerBg: "#FFFFFF",
 };
-const font = `'Instrument Sans', 'SF Pro Display', -apple-system, sans-serif`;
-const mono = `'JetBrains Mono', 'SF Mono', monospace`;
+const font = `'Inter', -apple-system, 'SF Pro Display', system-ui, sans-serif`;
+const mono = `'Inter', -apple-system, system-ui, sans-serif`;
 
 const fP = v => { if (v == null || v === "") return "—"; const s = v >= 0 ? "+" : ""; return `${s}${Number(v).toFixed(2)}%`; };
 const fU = v => { if (v == null || v === "") return "—"; const s = v >= 0 ? "+" : "−"; return `${s}$${Math.abs(v).toFixed(2)}`; };
@@ -1600,6 +1600,7 @@ function Journal({ user, onLogout }) {
   const [showPairsModal, setShowPairsModal] = useState(false);
   const [tab, setTab] = useState("dashboard");
   const [dailySubTab, setDailySubTab] = useState("daily"); // daily | weekly | monthly
+  const [moreStatsOpen, setMoreStatsOpen] = useState(false);
   const [page, setPage] = useState("journal");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyTrade());
@@ -2172,38 +2173,41 @@ function downloadJSON() {
     { k: "discipline", l: "Discipline", i: "✓" },
   ];
   const navStyle = (active) => ({
-    background: "none", border: "none", color: active ? "#fff" : "rgba(255,255,255,0.5)",
-    padding: "10px 16px", fontSize: 12, fontWeight: active ? 700 : 500, cursor: "pointer",
+    background: "none", border: "none", color: active ? T.text : T.textLight,
+    padding: "16px 4px", fontSize: 13, fontWeight: active ? 600 : 500, cursor: "pointer",
     fontFamily: font, letterSpacing: 0.3, borderBottom: active ? `2px solid ${T.accent}` : "2px solid transparent",
+    marginRight: 22,
   });
 
   if (loading) return <div style={{ minHeight: "100vh", background: T.bg, ...center, color: T.textMid, fontFamily: mono }}>Loading...</div>;
 
   return (
     <div style={{ background: T.bg, minHeight: "100vh", fontFamily: font, color: T.text }}>
-      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <div style={{ background: T.headerBg, padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 0" }}>
-            <div style={{ width: 7, height: 7, borderRadius: "50%", background: T.accent, boxShadow: `0 0 8px ${T.accent}66` }} />
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#fff", letterSpacing: 1.5 }}>VARMARI</span>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <div style={{ background: T.headerBg, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, borderBottom: `0.5px solid ${T.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 0" }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.accent }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: T.text, letterSpacing: 1.5 }}>VARMARI</span>
           </div>
-          <div style={{ display: "flex", gap: 0 }}>
+          <div style={{ display: "flex" }}>
             <button onClick={() => setPage("journal")} style={navStyle(page === "journal")}>Trading Journal</button>
             <button onClick={() => setPage("calculator")} style={navStyle(page === "calculator")}>Position Calculator</button>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "10px 0", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "12px 0", flexWrap: "wrap" }}>
           {page === "journal" && activeAccount && (
             <>
-              <button onClick={() => setShowPairsModal(true)} title="Manage Pairs" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: mono, cursor: "pointer" }}>⟡ Pairs ({pairs.length})</button>
-              <button onClick={() => setShowChecklistModal(true)} title="Manage Pre-Trade Rules" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: mono, cursor: "pointer" }}>✓ Rules ({checklistItems.length})</button>
-              <button onClick={() => setShowAccountModal(true)} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: mono, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ color: T.accent }}>●</span> {activeAccount.name} <span style={{ color: "rgba(255,255,255,0.5)" }}>▼</span>
+              <button onClick={() => setShowPairsModal(true)} title="Manage Pairs" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⟡ Pairs ({pairs.length})</button>
+              <button onClick={() => setShowChecklistModal(true)} title="Manage Pre-Trade Rules" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>✓ Rules ({checklistItems.length})</button>
+              <button onClick={() => setShowAccountModal(true)} style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, display: "inline-block" }}></span>
+                <span style={{ color: T.text, fontWeight: 500 }}>{activeAccount.name}</span>
+                <span style={{ color: T.textLight }}>▼</span>
               </button>
             </>
           )}
-          <button onClick={onLogout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: mono, cursor: "pointer" }}>Sign Out</button>
+          <button onClick={onLogout} style={{ background: "transparent", border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>Sign Out</button>
         </div>
       </div>
 
@@ -2337,26 +2341,193 @@ function downloadJSON() {
                     <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={btnP}>+ New Trade</button>
                   </div>
                 ) : (<>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 10 }}>
-                    <Stat icon="◎" label="Win Rate" value={`${S.wr.toFixed(1)}%`} color={S.wr >= 50 ? T.green : T.red} sub={`${S.w}W / ${S.l}L`} />
-                    <Stat icon="Σ" label="Total Trades" value={S.n} sub={`${S.be} BE`} />
-                    <Stat icon="△" label="Total PnL %" value={fP(S.tPnl)} color={cP(S.tPnl)} />
-                    <Stat icon="$" label="Total PnL $" value={fU(S.tUsd)} color={cP(S.tUsd)} />
-                    <Stat icon="⚖" label="Profit Factor" value={S.pf.toFixed(2)} color={S.pf >= 1.5 ? T.green : S.pf >= 1 ? T.amber : T.red} />
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 10 }}>
-                    <Stat icon="↑" label="Avg Win" value={fP(S.avgW)} color={T.green} />
-                    <Stat icon="↓" label="Avg Loss" value={fP(S.avgL)} color={T.red} />
-                    <Stat icon="★" label="Best" value={fP(S.best)} color={T.green} />
-                    <Stat icon="✦" label="Worst" value={fP(S.worst)} color={T.red} />
-                    <Stat icon="◆" label="Balance" value={`$${(S.base + S.tUsd).toFixed(0)}`} color={T.accent} sub={`Streak: ${S.maxS}`} />
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 10 }}>
-                    <Stat icon="▼" label="Max Drawdown" value={fU(-S.maxDD)} color={T.red} sub={`${S.maxDDpct.toFixed(1)}% from peak`} />
-                    <Stat icon="◊" label="Current DD" value={S.currentDD > 0.01 ? fU(-S.currentDD) : "—"} color={S.currentDD > 0.01 ? T.red : T.green} sub={S.currentDD > 0.01 ? `${S.currentDDpct.toFixed(1)}% off peak` : "At peak"} />
-                    <Stat icon="◷" label="Days Since Peak" value={S.daysSincePeak} sub={S.daysSincePeak === 0 ? "New peak today" : "days"} />
-                    <Stat icon="≈" label="Avg Intended RR" value={S.avgIntendedR != null ? `1:${S.avgIntendedR.toFixed(2)}` : "—"} sub={S.avgRealizedR != null ? `Realized ${S.avgRealizedR >= 0 ? "+" : ""}${S.avgRealizedR.toFixed(2)}R` : "—"} />
-                  </div>
+                  {/* HERO STRIP: Today / This Week / This Month */}
+                  {(() => {
+                    const todayISO = isoDate(new Date());
+                    const today = new Date();
+                    const sow = startOfWeek(today);
+                    const eow = endOfWeek(today);
+                    const som = startOfMonth(today);
+                    const eom = endOfMonth(today);
+                    const sowISO = isoDate(sow);
+                    const eowISO = isoDate(eow);
+                    const somISO = isoDate(som);
+                    const eomISO = isoDate(eom);
+
+                    const todayTrades = trades.filter(t => t.date === todayISO);
+                    const weekTrades = trades.filter(t => t.date >= sowISO && t.date <= eowISO);
+                    const monthTrades = trades.filter(t => t.date >= somISO && t.date <= eomISO);
+
+                    const sumStats = (list) => {
+                      const w = list.filter(t => t.result === "Win").length;
+                      const l = list.filter(t => t.result === "Loss").length;
+                      const pnlPct = list.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+                      const pnlUsd = list.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+                      const wr = (w + l) > 0 ? (w / (w + l)) * 100 : null;
+                      const tradingDays = new Set(list.map(t => t.date)).size;
+                      return { n: list.length, w, l, pnlPct, pnlUsd, wr, tradingDays };
+                    };
+                    const td = sumStats(todayTrades);
+                    const wk = sumStats(weekTrades);
+                    const mo = sumStats(monthTrades);
+
+                    const todayDate = today.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+                    const todayPositive = td.pnlUsd >= 0;
+                    const heroBg = td.n === 0 ? T.cardAlt : todayPositive ? T.greenBg : T.redBg;
+                    const heroBorder = td.n === 0 ? T.border : todayPositive ? "#A4D9B8" : "#F0B5AE";
+                    const heroAccent = td.n === 0 ? T.textMid : todayPositive ? T.green : T.red;
+                    const heroAccentDark = td.n === 0 ? T.text : todayPositive ? "#1F7A48" : "#A02A1F";
+
+                    const heroFmt = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}`;
+                    const heroFmtSmall = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(0)}`;
+
+                    return (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                        {/* TODAY — hero card with color */}
+                        <div style={{ background: heroBg, border: `0.5px solid ${heroBorder}`, borderRadius: 14, padding: "18px 20px", flex: "1.6" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <div style={{ fontSize: 11, color: heroAccent, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 600 }}>Today</div>
+                            <div style={{ fontSize: 11, color: T.textMid }}>{todayDate}</div>
+                          </div>
+                          <div style={{ fontSize: 36, color: heroAccentDark, fontWeight: 600, letterSpacing: -1.2, lineHeight: 1 }}>
+                            {td.n === 0 ? "$0.00" : heroFmt(td.pnlUsd)}
+                          </div>
+                          <div style={{ display: "flex", gap: 12, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+                            {td.n === 0 ? (
+                              <span style={{ color: T.textMid, fontStyle: "italic" }}>No trades yet — plan first, trade later</span>
+                            ) : (
+                              <>
+                                <span style={{ color: heroAccent }}>{fP(td.pnlPct)}</span>
+                                <span style={{ color: T.textMid }}>·</span>
+                                <span style={{ color: T.textMid }}>{td.n} {td.n === 1 ? "trade" : "trades"}</span>
+                                {td.wr != null && (<>
+                                  <span style={{ color: T.textMid }}>·</span>
+                                  <span style={{ color: T.textMid }}>{td.wr.toFixed(0)}% win</span>
+                                </>)}
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* THIS WEEK */}
+                        <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: "18px 20px" }}>
+                          <div style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>This week</div>
+                          <div style={{ fontSize: 26, color: wk.n === 0 ? T.textMid : (wk.pnlUsd >= 0 ? T.green : T.red), fontWeight: 600, letterSpacing: -0.8, lineHeight: 1 }}>
+                            {wk.n === 0 ? "$0" : heroFmtSmall(wk.pnlUsd)}
+                          </div>
+                          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+                            <span style={{ color: T.textMid }}>{wk.tradingDays} {wk.tradingDays === 1 ? "day" : "days"}</span>
+                            <span style={{ color: T.textMid }}>·</span>
+                            <span style={{ color: T.textMid }}>{wk.n} {wk.n === 1 ? "trade" : "trades"}</span>
+                          </div>
+                        </div>
+
+                        {/* THIS MONTH */}
+                        <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: "18px 20px" }}>
+                          <div style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>This month</div>
+                          <div style={{ fontSize: 26, color: mo.n === 0 ? T.textMid : (mo.pnlUsd >= 0 ? T.green : T.red), fontWeight: 600, letterSpacing: -0.8, lineHeight: 1 }}>
+                            {mo.n === 0 ? "$0" : heroFmtSmall(mo.pnlUsd)}
+                          </div>
+                          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+                            <span style={{ color: mo.pnlPct >= 0 ? T.green : T.red }}>{fP(mo.pnlPct)}</span>
+                            {mo.wr != null && (<>
+                              <span style={{ color: T.textMid }}>·</span>
+                              <span style={{ color: mo.wr >= 50 ? T.green : T.red }}>{mo.wr.toFixed(0)}% WR</span>
+                            </>)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* DISCIPLINE STRIP: Streak / Adherence / Drawdown · with More Stats expander */}
+                  {(() => {
+                    const currentStreak = S.maxS; // longest streak we have; could compute current ongoing later
+                    const adhPct = S.adherence ? (
+                      // Aggregate adherence across all tracked trades
+                      (() => {
+                        const f = S.adherence.full?.n || 0;
+                        const p = S.adherence.partial?.n || 0;
+                        const l = S.adherence.low?.n || 0;
+                        const tracked = f + p + l;
+                        if (tracked === 0) return null;
+                        return ((f * 1 + p * 0.7 + l * 0.3) / tracked) * 100;
+                      })()
+                    ) : null;
+                    const adhColor = adhPct == null ? T.textMid : adhPct >= 85 ? T.green : adhPct >= 65 ? T.amber : T.red;
+                    return (
+                      <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: "14px 20px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                          <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
+                            <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                              <span style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, fontWeight: 500 }}>Best streak</span>
+                              <span style={{ fontSize: 20, color: T.green, fontWeight: 600 }}>{currentStreak}</span>
+                              <span style={{ fontSize: 11, color: T.textMid }}>wins</span>
+                            </div>
+                            <div style={{ width: 1, height: 22, background: T.border }}></div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                              <span style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, fontWeight: 500 }}>Rules</span>
+                              <span style={{ fontSize: 20, color: adhColor, fontWeight: 600 }}>{adhPct == null ? "—" : `${adhPct.toFixed(0)}%`}</span>
+                              <span style={{ fontSize: 11, color: T.textMid }}>{adhPct == null ? "no data" : "followed"}</span>
+                            </div>
+                            <div style={{ width: 1, height: 22, background: T.border }}></div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                              <span style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, fontWeight: 500 }}>Drawdown</span>
+                              <span style={{ fontSize: 20, color: S.maxDDpct >= 5 ? T.red : T.text, fontWeight: 600 }}>{S.maxDD > 0 ? `-${S.maxDDpct.toFixed(1)}%` : "—"}</span>
+                              <span style={{ fontSize: 11, color: T.textMid }}>max</span>
+                            </div>
+                          </div>
+                          <button onClick={() => setMoreStatsOpen(o => !o)} style={{ background: "none", border: "none", color: T.accent, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
+                            {moreStatsOpen ? "Hide stats" : "More stats"}
+                            <span style={{ display: "inline-block", transform: moreStatsOpen ? "rotate(180deg)" : "none", transition: "transform 150ms" }}>↓</span>
+                          </button>
+                        </div>
+
+                        {/* COLLAPSIBLE MORE STATS */}
+                        {moreStatsOpen && (
+                          <div style={{ marginTop: 16, paddingTop: 16, borderTop: `0.5px solid ${T.border}`, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14 }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>All-time WR</div>
+                              <div style={{ fontSize: 18, color: S.wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{S.wr.toFixed(1)}%</div>
+                              <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{S.w}W · {S.l}L · {S.be}BE</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Profit factor</div>
+                              <div style={{ fontSize: 18, color: S.pf >= 1.5 ? T.green : S.pf >= 1 ? T.amber : T.red, fontWeight: 600 }}>{S.pf.toFixed(2)}</div>
+                              <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{S.pf >= 1.5 ? "healthy" : S.pf >= 1 ? "marginal" : "losing"}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Avg win</div>
+                              <div style={{ fontSize: 18, color: T.green, fontWeight: 600 }}>{fP(S.avgW)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Avg loss</div>
+                              <div style={{ fontSize: 18, color: T.red, fontWeight: 600 }}>{fP(S.avgL)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Best trade</div>
+                              <div style={{ fontSize: 18, color: T.green, fontWeight: 600 }}>{fP(S.best)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Worst trade</div>
+                              <div style={{ fontSize: 18, color: T.red, fontWeight: 600 }}>{fP(S.worst)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Balance</div>
+                              <div style={{ fontSize: 18, color: T.accent, fontWeight: 600 }}>${(S.base + S.tUsd).toFixed(0)}</div>
+                              <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>start ${S.base.toFixed(0)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Avg RR (real)</div>
+                              <div style={{ fontSize: 18, color: T.text, fontWeight: 600 }}>{S.avgRealizedR != null ? `${S.avgRealizedR >= 0 ? "+" : ""}${S.avgRealizedR.toFixed(2)}R` : "—"}</div>
+                              <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>intended {S.avgIntendedR != null ? `1:${S.avgIntendedR.toFixed(2)}` : "—"}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* CALENDAR VIEW — replaces Equity Curve, Performance by Rating, Exit Quality */}
                   {(() => {
                     const year = calMonth.getFullYear();
