@@ -2381,126 +2381,54 @@ function downloadJSON() {
                     const heroFmt = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}`;
                     const heroFmtSmall = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(0)}`;
 
-                    // Weekly sparkline: cumulative pnl through the week (Mon..Sun in order)
-                    const weekDaysList = [];
-                    for (let d = new Date(sow); d <= eow; d.setDate(d.getDate() + 1)) weekDaysList.push(isoDate(d));
-                    let runningWk = 0;
-                    const weekSpark = weekDaysList.map(iso => {
-                      const dayPnL = weekTrades.filter(t => t.date === iso).reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
-                      runningWk += dayPnL;
-                      return runningWk;
-                    });
-                    // Build SVG polyline points
-                    const sparkMin = Math.min(0, ...weekSpark);
-                    const sparkMax = Math.max(0, ...weekSpark);
-                    const sparkRange = (sparkMax - sparkMin) || 1;
-                    const sparkPoints = weekSpark.map((v, i) => {
-                      const x = (i / (weekSpark.length - 1)) * 200;
-                      const y = 24 - ((v - sparkMin) / sparkRange) * 22;
-                      return `${x.toFixed(1)},${y.toFixed(1)}`;
-                    }).join(" ");
-                    const lastSparkX = 200;
-                    const lastSparkY = 24 - ((weekSpark[weekSpark.length - 1] - sparkMin) / sparkRange) * 22;
-
-                    // Monthly bars: pnl by week within current month (up to 5 weeks)
-                    const monthBars = [];
-                    let wkCursor = startOfWeek(som);
-                    while (wkCursor <= eom) {
-                      const wkEnd = endOfWeek(wkCursor);
-                      const wkStartISO = isoDate(wkCursor);
-                      const wkEndISO = isoDate(wkEnd);
-                      const wkPnl = trades.filter(t => t.date >= wkStartISO && t.date <= wkEndISO && t.date >= somISO && t.date <= eomISO).reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
-                      monthBars.push(wkPnl);
-                      wkCursor = new Date(wkEnd);
-                      wkCursor.setDate(wkCursor.getDate() + 1);
-                    }
-                    const maxAbsBar = Math.max(1, ...monthBars.map(Math.abs));
-
-                    // Today's WR for donut (winRate of today's trades)
-                    const todayWR = td.wr != null ? td.wr : (td.n > 0 ? 100 : 0);
-                    const donutCircum = 2 * Math.PI * 22; // r=22
-                    const donutFilled = (todayWR / 100) * donutCircum;
-                    const donutColor = td.n === 0 ? T.textLight : todayPositive ? T.green : T.red;
-
                     return (
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                        {/* TODAY — hero card with mini WR donut */}
-                        <div style={{ background: heroBg, border: `0.5px solid ${heroBorder}`, borderRadius: 14, padding: "18px 20px", flex: "1.6", display: "flex", justifyContent: "space-between", gap: 14 }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                              <div style={{ fontSize: 11, color: heroAccent, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 600 }}>Today</div>
-                              <div style={{ fontSize: 11, color: T.textMid }}>{todayDate}</div>
-                            </div>
-                            <div style={{ fontSize: 36, color: heroAccentDark, fontWeight: 600, letterSpacing: -1.2, lineHeight: 1 }}>
-                              {td.n === 0 ? "$0.00" : heroFmt(td.pnlUsd)}
-                            </div>
-                            <div style={{ display: "flex", gap: 12, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
-                              {td.n === 0 ? (
-                                <span style={{ color: T.textMid, fontStyle: "italic" }}>No trades yet — plan first, trade later</span>
-                              ) : (
-                                <>
-                                  <span style={{ color: heroAccent }}>{fP(td.pnlPct)}</span>
-                                  <span style={{ color: T.textMid }}>·</span>
-                                  <span style={{ color: T.textMid }}>{td.n} {td.n === 1 ? "trade" : "trades"}</span>
-                                  {td.wr != null && (<>
-                                    <span style={{ color: T.textMid }}>·</span>
-                                    <span style={{ color: T.textMid }}>{td.wr.toFixed(0)}% win</span>
-                                  </>)}
-                                </>
-                              )}
-                            </div>
+                        {/* TODAY — hero card with color */}
+                        <div style={{ background: heroBg, border: `0.5px solid ${heroBorder}`, borderRadius: 14, padding: "18px 20px", flex: "1.6" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <div style={{ fontSize: 11, color: heroAccent, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 600 }}>Today</div>
+                            <div style={{ fontSize: 11, color: T.textMid }}>{todayDate}</div>
                           </div>
-                          {/* Mini WR donut */}
-                          {td.n > 0 && (
-                            <svg width="58" height="58" viewBox="0 0 58 58" style={{ flexShrink: 0 }}>
-                              <circle cx="29" cy="29" r="22" fill="none" stroke={T.border} strokeWidth="5"/>
-                              <circle cx="29" cy="29" r="22" fill="none" stroke={donutColor} strokeWidth="5"
-                                strokeDasharray={`${donutFilled} ${donutCircum}`} strokeDashoffset="0"
-                                transform="rotate(-90 29 29)" strokeLinecap="round"/>
-                              <text x="29" y="33" textAnchor="middle" fontSize="11" fill={donutColor} fontWeight="600" fontFamily="Inter">{todayWR.toFixed(0)}%</text>
-                            </svg>
-                          )}
+                          <div style={{ fontSize: 36, color: heroAccentDark, fontWeight: 600, letterSpacing: -1.2, lineHeight: 1 }}>
+                            {td.n === 0 ? "$0.00" : heroFmt(td.pnlUsd)}
+                          </div>
+                          <div style={{ display: "flex", gap: 12, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+                            {td.n === 0 ? (
+                              <span style={{ color: T.textMid, fontStyle: "italic" }}>No trades yet — plan first, trade later</span>
+                            ) : (
+                              <>
+                                <span style={{ color: heroAccent }}>{fP(td.pnlPct)}</span>
+                                <span style={{ color: T.textMid }}>·</span>
+                                <span style={{ color: T.textMid }}>{td.n} {td.n === 1 ? "trade" : "trades"}</span>
+                                {td.wr != null && (<>
+                                  <span style={{ color: T.textMid }}>·</span>
+                                  <span style={{ color: T.textMid }}>{td.wr.toFixed(0)}% win</span>
+                                </>)}
+                              </>
+                            )}
+                          </div>
                         </div>
 
-                        {/* THIS WEEK — with sparkline */}
+                        {/* THIS WEEK */}
                         <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: "18px 20px" }}>
                           <div style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>This week</div>
                           <div style={{ fontSize: 26, color: wk.n === 0 ? T.textMid : (wk.pnlUsd >= 0 ? T.green : T.red), fontWeight: 600, letterSpacing: -0.8, lineHeight: 1 }}>
                             {wk.n === 0 ? "$0" : heroFmtSmall(wk.pnlUsd)}
                           </div>
-                          {wk.n > 0 && (
-                            <svg width="100%" height="28" viewBox="0 0 200 28" preserveAspectRatio="none" style={{ marginTop: 8, display: "block" }}>
-                              <polyline points={sparkPoints} fill="none" stroke={T.purple} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
-                              <circle cx={lastSparkX} cy={lastSparkY} r="3" fill={T.purple}/>
-                            </svg>
-                          )}
-                          <div style={{ display: "flex", gap: 10, marginTop: wk.n > 0 ? 4 : 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+                          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
                             <span style={{ color: T.textMid }}>{wk.tradingDays} {wk.tradingDays === 1 ? "day" : "days"}</span>
                             <span style={{ color: T.textMid }}>·</span>
                             <span style={{ color: T.textMid }}>{wk.n} {wk.n === 1 ? "trade" : "trades"}</span>
                           </div>
                         </div>
 
-                        {/* THIS MONTH — with weekly mini bars */}
+                        {/* THIS MONTH */}
                         <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: "18px 20px" }}>
                           <div style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>This month</div>
                           <div style={{ fontSize: 26, color: mo.n === 0 ? T.textMid : (mo.pnlUsd >= 0 ? T.green : T.red), fontWeight: 600, letterSpacing: -0.8, lineHeight: 1 }}>
                             {mo.n === 0 ? "$0" : heroFmtSmall(mo.pnlUsd)}
                           </div>
-                          {monthBars.some(b => b !== 0) && (
-                            <div style={{ display: "flex", gap: 4, alignItems: "flex-end", height: 28, marginTop: 8 }}>
-                              {monthBars.map((b, i) => (
-                                <div key={i} style={{
-                                  flex: 1,
-                                  background: b >= 0 ? T.green : T.red,
-                                  height: `${Math.max(8, (Math.abs(b) / maxAbsBar) * 100)}%`,
-                                  borderRadius: 2,
-                                  opacity: b === 0 ? 0.15 : 1,
-                                }} title={`W${i+1}: ${b >= 0 ? "+" : "-"}$${Math.abs(b).toFixed(0)}`}></div>
-                              ))}
-                            </div>
-                          )}
-                          <div style={{ display: "flex", gap: 10, marginTop: monthBars.some(b => b !== 0) ? 4 : 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+                          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
                             <span style={{ color: mo.pnlPct >= 0 ? T.green : T.red }}>{fP(mo.pnlPct)}</span>
                             {mo.wr != null && (<>
                               <span style={{ color: T.textMid }}>·</span>
@@ -2706,9 +2634,6 @@ function downloadJSON() {
                                     : c.pnl > 0 ? T.green + "40"
                                     : c.pnl < 0 ? T.red + "40"
                                     : T.border;
-                                  // Intensity bar — width proportional to |pnl| relative to month max
-                                  const monthMaxAbs = Math.max(1, ...weeks.flatMap(w => w.cells.filter(x => !x.blank && x.trades.length > 0).map(x => Math.abs(x.pnl))));
-                                  const intensityW = hasTrades ? Math.max(15, (Math.abs(c.pnl) / monthMaxAbs) * 100) : 0;
                                   return (
                                     <div key={c.key} title={hasTrades ? `${c.trades.length} trades · ${fU(c.pnl)} · ${c.wr.toFixed(0)}% WR` : ""}
                                       style={{
@@ -2735,8 +2660,6 @@ function downloadJSON() {
                                           <div style={{ fontSize: 9, color: c.wr >= 50 ? T.green : T.red, fontFamily: mono, fontWeight: 600 }}>
                                             {(c.trades.filter(t => t.result === "Win").length + c.trades.filter(t => t.result === "Loss").length) > 0 ? `${c.wr.toFixed(0)}%` : ""}
                                           </div>
-                                          {/* Intensity bar */}
-                                          <div style={{ height: 3, background: c.pnl >= 0 ? T.green : T.red, opacity: 0.45, borderRadius: 1.5, width: `${intensityW}%`, marginTop: 4 }}></div>
                                         </div>
                                       )}
                                     </div>
