@@ -582,12 +582,12 @@ function DayContextBlock({ user, activeAccount, dateISO }) {
   );
 }
 
+
 // ══════════════════════════════════════════
-// DAILY PLAN PAGE — full-page journaling view
-// Pre-trade Journal (Fundamentals/Technicals/Bias) + Post-trade Review (What happened/Deviations/Lessons)
-// Trade list lives in Trade Log, not here. This page is for WRITING.
+// DAILY PLAN PAGE — single-page journal
+// Fundamentals + Technicals · Yes/No trade toggle · (when Yes) trade list + new trade + What happened + Mistakes
 // ══════════════════════════════════════════
-function DailyPlanPage({ user, activeAccount }) {
+function DailyPlanPage({ user, activeAccount, accountTrades, onNewTrade, onEditTrade }) {
   const [viewDate, setViewDate] = useState(new Date());
   const viewDateISO = isoDate(viewDate);
   const todayISO = isoDate(new Date());
@@ -597,21 +597,20 @@ function DailyPlanPage({ user, activeAccount }) {
   const [plan, setPlan] = useState({
     pre_fundamentals: "",
     pre_technicals: "",
-    pre_bias: "",
     post_what_happened: "",
     post_deviations: "",
-    post_lessons: "",
-    followed: null,
+    trade_taken: null,
   });
   const [planId, setPlanId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [activeSection, setActiveSection] = useState("pre");
+
   const [pastDays, setPastDays] = useState([]);
   const [pastLoaded, setPastLoaded] = useState(false);
   const [showPastList, setShowPastList] = useState(false);
 
+  // Load plan for the viewed day
   useEffect(() => {
     if (!activeAccount) return;
     const load = async () => {
@@ -625,15 +624,13 @@ function DailyPlanPage({ user, activeAccount }) {
         setPlan({
           pre_fundamentals: planRow.pre_fundamentals || "",
           pre_technicals: planRow.pre_technicals || "",
-          pre_bias: planRow.pre_bias || planRow.bias_text || "",
           post_what_happened: planRow.post_what_happened || "",
           post_deviations: planRow.post_deviations || "",
-          post_lessons: planRow.post_lessons || planRow.plan_text || "",
-          followed: planRow.followed,
+          trade_taken: planRow.trade_taken !== undefined ? planRow.trade_taken : null,
         });
         setPlanId(planRow.id);
       } else {
-        setPlan({ pre_fundamentals: "", pre_technicals: "", pre_bias: "", post_what_happened: "", post_deviations: "", post_lessons: "", followed: null });
+        setPlan({ pre_fundamentals: "", pre_technicals: "", post_what_happened: "", post_deviations: "", trade_taken: null });
         setPlanId(null);
       }
       setDirty(false);
@@ -641,6 +638,7 @@ function DailyPlanPage({ user, activeAccount }) {
     load();
   }, [user.id, activeAccount?.id, viewDateISO]);
 
+  // Past days list
   const loadPast = async () => {
     if (!activeAccount) return;
     setPastLoaded(false);
@@ -654,9 +652,9 @@ function DailyPlanPage({ user, activeAccount }) {
       .gte("date", startISO)
       .order("date", { ascending: false });
     const list = (planRows || []).map(p => {
-      const hasPre = (p.pre_fundamentals || "").trim() || (p.pre_technicals || "").trim() || (p.pre_bias || "").trim() || (p.bias_text || "").trim();
-      const hasPost = (p.post_what_happened || "").trim() || (p.post_deviations || "").trim() || (p.post_lessons || "").trim() || (p.plan_text || "").trim();
-      return { date: p.date, hasPre, hasPost, followed: p.followed };
+      const hasPre = (p.pre_fundamentals || "").trim() || (p.pre_technicals || "").trim();
+      const hasPost = (p.post_what_happened || "").trim() || (p.post_deviations || "").trim();
+      return { date: p.date, hasPre, hasPost, trade_taken: p.trade_taken };
     });
     setPastDays(list);
     setPastLoaded(true);
@@ -685,11 +683,9 @@ function DailyPlanPage({ user, activeAccount }) {
       date: viewDateISO,
       pre_fundamentals: plan.pre_fundamentals,
       pre_technicals: plan.pre_technicals,
-      pre_bias: plan.pre_bias,
       post_what_happened: plan.post_what_happened,
       post_deviations: plan.post_deviations,
-      post_lessons: plan.post_lessons,
-      followed: plan.followed,
+      trade_taken: plan.trade_taken,
       updated_at: new Date().toISOString(),
       ...extra,
     };
@@ -699,15 +695,16 @@ function DailyPlanPage({ user, activeAccount }) {
     setSaving(false);
     if (res.error) { alert("Plan save failed: " + res.error.message); return; }
     setPlanId(res.data.id);
-    if (extra.followed !== undefined) setPlan(p => ({ ...p, followed: extra.followed }));
     setDirty(false);
     setJustSaved(true);
     setTimeout(() => setJustSaved(false), 1500);
   };
 
-  const markFollowed = async (v) => {
-    setPlan(p => ({ ...p, followed: v }));
-    await save({ followed: v });
+  // Toggle: trade taken / no trade
+  const setTradeTaken = async (val) => {
+    setPlan(p => ({ ...p, trade_taken: val }));
+    setDirty(true);
+    await save({ trade_taken: val });
   };
 
   const handleBlur = () => { if (dirty) save(); };
@@ -721,12 +718,24 @@ function DailyPlanPage({ user, activeAccount }) {
     return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   };
 
+  // Trades taken for this day
+  const dayTrades = useMemo(() => {
+    return (accountTrades || []).filter(t => t.date === viewDateISO).sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+  }, [accountTrades, viewDateISO]);
+
+  const dayStats = useMemo(() => {
+    if (dayTrades.length === 0) return null;
+    const wins = dayTrades.filter(t => t.result === "Win").length;
+    const losses = dayTrades.filter(t => t.result === "Loss").length;
+    const be = dayTrades.filter(t => t.result === "Breakeven").length;
+    const pnl = dayTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+    const usd = dayTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+    const wr = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : null;
+    return { wins, losses, be, pnl, usd, wr };
+  }, [dayTrades]);
+
   const hasPre = (plan.pre_fundamentals || "").trim() || (plan.pre_technicals || "").trim();
   const hasPost = (plan.post_what_happened || "").trim() || (plan.post_deviations || "").trim();
-
-  const wordCount = (s) => (s || "").trim().split(/\s+/).filter(Boolean).length;
-  const preWords = wordCount(plan.pre_fundamentals) + wordCount(plan.pre_technicals);
-  const postWords = wordCount(plan.post_what_happened) + wordCount(plan.post_deviations);
 
   const bigTA = {
     width: "100%",
@@ -748,9 +757,18 @@ function DailyPlanPage({ user, activeAccount }) {
   });
   const hintStyle = { fontSize: 11, color: T.textLight, marginBottom: 10, fontStyle: "italic", lineHeight: 1.5 };
 
+  // Auto-set trade_taken=true if user has logged trades for this day and toggle wasn't set
+  useEffect(() => {
+    if (plan.trade_taken === null && dayTrades.length > 0 && planId) {
+      // Soft auto-correct: if there are trades, mark trade_taken true
+      setPlan(p => ({ ...p, trade_taken: true }));
+    }
+  }, [dayTrades.length, planId]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
+      {/* HEADER */}
       <div style={{ ...cardS, padding: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -764,9 +782,9 @@ function DailyPlanPage({ user, activeAccount }) {
             </button>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            {dirty && <span style={{ fontSize: 11, color: T.amber, fontStyle: "italic" }}>unsaved changes</span>}
+            {dirty && <span style={{ fontSize: 11, color: T.amber, fontStyle: "italic" }}>unsaved</span>}
             <button onClick={() => save()} disabled={saving} style={{ ...btnP, padding: "8px 18px", fontSize: 12, opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>
-              {saving ? "Saving..." : justSaved ? "✓ Saved" : (planId ? "Update" : "Save plan")}
+              {saving ? "Saving..." : justSaved ? "✓ Saved" : (planId ? "Update" : "Save")}
             </button>
           </div>
         </div>
@@ -774,17 +792,18 @@ function DailyPlanPage({ user, activeAccount }) {
           <span style={{ fontFamily: font, fontSize: 16, fontWeight: 700, color: T.text }}>{dayLabel(viewDateISO)}</span>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             {isToday && <span style={{ fontSize: 10, color: T.accent, fontWeight: 700, fontFamily: mono, background: T.accentBg, padding: "3px 10px", borderRadius: 4 }}>● TODAY</span>}
-            {hasPre && <span style={{ fontSize: 10, color: T.blue, fontWeight: 700, fontFamily: mono, background: T.blueBg, padding: "3px 10px", borderRadius: 4 }}>✓ PRE-TRADE</span>}
-            {hasPost && <span style={{ fontSize: 10, color: T.purple, fontWeight: 700, fontFamily: mono, background: T.purpleBg, padding: "3px 10px", borderRadius: 4 }}>✓ POST-TRADE</span>}
-            {hasPre && plan.followed === true && <span style={{ fontSize: 10, color: T.green, fontWeight: 700, fontFamily: mono, background: T.greenBg, padding: "3px 10px", borderRadius: 4 }}>FOLLOWED</span>}
-            {hasPre && plan.followed === false && <span style={{ fontSize: 10, color: T.red, fontWeight: 700, fontFamily: mono, background: T.redBg, padding: "3px 10px", borderRadius: 4 }}>DEVIATED</span>}
+            {hasPre && <span style={{ fontSize: 10, color: T.blue, fontWeight: 700, fontFamily: mono, background: T.blueBg, padding: "3px 10px", borderRadius: 4 }}>✓ PLAN</span>}
+            {plan.trade_taken === true && <span style={{ fontSize: 10, color: T.green, fontWeight: 700, fontFamily: mono, background: T.greenBg, padding: "3px 10px", borderRadius: 4 }}>TRADE TAKEN</span>}
+            {plan.trade_taken === false && <span style={{ fontSize: 10, color: T.textMid, fontWeight: 700, fontFamily: mono, background: T.cardAlt, padding: "3px 10px", borderRadius: 4 }}>NO TRADE</span>}
+            {hasPost && <span style={{ fontSize: 10, color: T.purple, fontWeight: 700, fontFamily: mono, background: T.purpleBg, padding: "3px 10px", borderRadius: 4 }}>✓ REVIEWED</span>}
           </div>
         </div>
       </div>
 
+      {/* PAST PLANS LIST (collapsible) */}
       {showPastList && (
         <div style={{ ...cardS, padding: 14 }}>
-          <div style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 10 }}>Past 60 Days · click any day to open</div>
+          <div style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 10 }}>Past 60 Days · click to open</div>
           {!pastLoaded ? <div style={{ padding: 16, color: T.textLight, fontSize: 12, textAlign: "center" }}>Loading...</div>
             : pastDays.length === 0 ? <div style={{ padding: 16, color: T.textLight, fontSize: 12, textAlign: "center" }}>No past plans yet.</div>
             : (
@@ -804,10 +823,10 @@ function DailyPlanPage({ user, activeAccount }) {
                     }}>
                       <div style={{ fontSize: 12, fontWeight: 600, fontFamily: mono }}>{shortDayLabel(d.date)}</div>
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                        {d.hasPre && <span style={{ fontSize: 9, color: T.blue, fontFamily: mono, fontWeight: 700, background: T.blueBg, padding: "1px 6px", borderRadius: 3 }}>PRE</span>}
-                        {d.hasPost && <span style={{ fontSize: 9, color: T.purple, fontFamily: mono, fontWeight: 700, background: T.purpleBg, padding: "1px 6px", borderRadius: 3 }}>POST</span>}
-                        {d.followed === true && <span style={{ fontSize: 9, color: T.green, fontFamily: mono, fontWeight: 700 }}>✓</span>}
-                        {d.followed === false && <span style={{ fontSize: 9, color: T.red, fontFamily: mono, fontWeight: 700 }}>✕</span>}
+                        {d.hasPre && <span style={{ fontSize: 9, color: T.blue, fontFamily: mono, fontWeight: 700, background: T.blueBg, padding: "1px 6px", borderRadius: 3 }}>PLAN</span>}
+                        {d.trade_taken === true && <span style={{ fontSize: 9, color: T.green, fontFamily: mono, fontWeight: 700 }}>● T</span>}
+                        {d.trade_taken === false && <span style={{ fontSize: 9, color: T.textMid, fontFamily: mono, fontWeight: 700 }}>○</span>}
+                        {d.hasPost && <span style={{ fontSize: 9, color: T.purple, fontFamily: mono, fontWeight: 700, background: T.purpleBg, padding: "1px 6px", borderRadius: 3 }}>REV</span>}
                       </div>
                     </div>
                   );
@@ -817,139 +836,139 @@ function DailyPlanPage({ user, activeAccount }) {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button onClick={() => setActiveSection("pre")} style={{
-          flex: 1, padding: "12px 18px", borderRadius: 10,
-          border: `0.5px solid ${activeSection === "pre" ? T.blue : T.border}`,
-          background: activeSection === "pre" ? T.blueBg : T.card,
-          color: activeSection === "pre" ? T.blue : T.textMid,
-          cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: font,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-        }}>
-          <span>◧ Pre-Trade Journal</span>
-          <span style={{ fontSize: 10, opacity: 0.7, fontFamily: mono }}>{preWords > 0 ? `${preWords} words` : "empty"}</span>
-        </button>
-        <button onClick={() => setActiveSection("post")} style={{
-          flex: 1, padding: "12px 18px", borderRadius: 10,
-          border: `0.5px solid ${activeSection === "post" ? T.purple : T.border}`,
-          background: activeSection === "post" ? T.purpleBg : T.card,
-          color: activeSection === "post" ? T.purple : T.textMid,
-          cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: font,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-        }}>
-          <span>◨ Post-Trade Review</span>
-          <span style={{ fontSize: 10, opacity: 0.7, fontFamily: mono }}>{postWords > 0 ? `${postWords} words` : "empty"}</span>
-        </button>
+      {/* 1. FUNDAMENTALS */}
+      <div style={{ ...cardS, padding: 20, borderTop: `3px solid ${T.blue}` }}>
+        <div style={sectionLabel(T.blue)}>1 · Fundamentals · macro story</div>
+        <div style={hintStyle}>News, economic data, central bank context, sentiment. ~1 hour of writing.</div>
+        <textarea
+          value={plan.pre_fundamentals}
+          onChange={e => updateField("pre_fundamentals", e.target.value)}
+          onBlur={handleBlur}
+          placeholder="Macro context, data releases, central banks, sentiment shifts, capital flows..."
+          style={bigTA}
+        />
       </div>
 
-      {activeSection === "pre" && (
-        <div style={{ ...cardS, padding: 22, borderTop: `3px solid ${T.blue}` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Pre-Trade Journal</span>
-            <span style={{ fontSize: 11, color: T.textLight, fontStyle: "italic" }}>Write before the session. 1.5 hour deep prep.</span>
-          </div>
-          <div style={{ fontSize: 12, color: T.textMid, marginBottom: 18, lineHeight: 1.55 }}>
-            Fundamentals first (the why), then technicals (the where).
-          </div>
+      {/* 2. TECHNICALS */}
+      <div style={{ ...cardS, padding: 20, borderTop: `3px solid ${T.blue}` }}>
+        <div style={sectionLabel(T.blue)}>2 · Technicals · chart story</div>
+        <div style={hintStyle}>Key levels, structure, where to enter, where not to. ~30 min.</div>
+        <textarea
+          value={plan.pre_technicals}
+          onChange={e => updateField("pre_technicals", e.target.value)}
+          onBlur={handleBlur}
+          placeholder="EURUSD: daily structure broken at 1.0850, watching for retest. GBPJPY: trending, pullback to 190.50..."
+          style={bigTA}
+        />
+      </div>
 
-          <div style={{ marginBottom: 18 }}>
-            <div style={sectionLabel(T.blue)}>1 · Fundamentals · the macro story</div>
-            <div style={hintStyle}>News, economic data, central bank context, sentiment, what's moving big money today. Around 1 hour.</div>
-            <textarea
-              value={plan.pre_fundamentals}
-              onChange={e => updateField("pre_fundamentals", e.target.value)}
-              onBlur={handleBlur}
-              placeholder="Macro context, key data releases, Fed/ECB/BOJ speak, sentiment shifts, news that matters, capital flows, risk-on vs risk-off..."
-              style={bigTA}
-            />
-          </div>
-
+      {/* 3. TOGGLE: Trade taken? */}
+      <div style={{ ...cardS, padding: 18, borderTop: `3px solid ${T.accent}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div style={sectionLabel(T.blue)}>2 · Technicals · the chart story</div>
-            <div style={hintStyle}>Key levels, structure on each pair you're watching, where you'd enter, where you wouldn't. Around 30 minutes.</div>
-            <textarea
-              value={plan.pre_technicals}
-              onChange={e => updateField("pre_technicals", e.target.value)}
-              onBlur={handleBlur}
-              placeholder="EURUSD: daily structure broken at 1.0850, watching for retest. GBPJPY: trending, looking for pullback to 190.50. Levels, zones, invalidations..."
-              style={bigTA}
-            />
+            <div style={{ ...sectionLabel(T.accent), marginBottom: 4 }}>3 · Trade taken today?</div>
+            <div style={{ fontSize: 11, color: T.textLight, fontStyle: "italic" }}>Sitting on your hands is a win. Mark "No trade" without guilt.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setTradeTaken(true)} style={{
+              padding: "10px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, fontFamily: font,
+              cursor: "pointer",
+              border: `1px solid ${plan.trade_taken === true ? T.green : T.border}`,
+              background: plan.trade_taken === true ? T.green : T.card,
+              color: plan.trade_taken === true ? "#fff" : T.text,
+            }}>✓ Trade taken</button>
+            <button onClick={() => setTradeTaken(false)} style={{
+              padding: "10px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, fontFamily: font,
+              cursor: "pointer",
+              border: `1px solid ${plan.trade_taken === false ? T.textMid : T.border}`,
+              background: plan.trade_taken === false ? T.textMid : T.card,
+              color: plan.trade_taken === false ? "#fff" : T.text,
+            }}>✕ No trade</button>
           </div>
         </div>
-      )}
+      </div>
 
-      {activeSection === "post" && (
-        <div style={{ ...cardS, padding: 22, borderTop: `3px solid ${T.purple}` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Post-Trade Review</span>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {hasPre && (
-                <>
-                  <span style={{ fontSize: 11, color: T.textLight, marginRight: 4 }}>Did I follow my plan?</span>
-                  <button onClick={() => markFollowed(true)} style={{ ...btnG, fontSize: 11, padding: "5px 12px", color: plan.followed === true ? "#fff" : T.green, borderColor: T.green + "60", background: plan.followed === true ? T.green : "transparent" }}>✓ Yes</button>
-                  <button onClick={() => markFollowed(false)} style={{ ...btnG, fontSize: 11, padding: "5px 12px", color: plan.followed === false ? "#fff" : T.red, borderColor: T.red + "60", background: plan.followed === false ? T.red : "transparent" }}>✕ No</button>
-                </>
-              )}
-            </div>
-          </div>
-          <div style={{ fontSize: 12, color: T.textMid, marginBottom: 18, lineHeight: 1.55 }}>
-            End-of-day honesty session. Review your pre-market notes, write what actually happened, log mistakes.
-          </div>
-
-          {/* PRE-MARKET MIRROR — Fundamentals + Technicals, EDITABLE (synced with Pre-Trade page) */}
-          <div style={{ background: T.blueBg + "70", border: `0.5px solid ${T.blue}30`, borderRadius: 10, padding: 14, marginBottom: 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: 10, color: T.blue, letterSpacing: 1.5, textTransform: "uppercase", fontWeight: 700, fontFamily: font }}>◧ Pre-market · from morning prep · editable</div>
-              <span style={{ fontSize: 10, color: T.textLight, fontStyle: "italic" }}>Synced with Pre-Trade page</span>
+      {/* IF TRADE TAKEN: trades list + new trade + What happened + Mistakes */}
+      {plan.trade_taken === true && (
+        <>
+          {/* TRADES LIST */}
+          <div style={{ ...cardS, padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>
+                {dayTrades.length === 0 ? "No trades logged yet for this day" : `Trades · ${dayTrades.length}`}
+              </span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {dayStats && (
+                  <div style={{ display: "flex", gap: 10, fontSize: 11, fontFamily: mono }}>
+                    <span style={{ color: T.green }}>{dayStats.wins}W</span>
+                    <span style={{ color: T.red }}>{dayStats.losses}L</span>
+                    {dayStats.wr != null && <span style={{ color: dayStats.wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{dayStats.wr.toFixed(0)}%</span>}
+                    <span style={{ color: cP(dayStats.pnl), fontWeight: 700 }}>{fP(dayStats.pnl)}</span>
+                  </div>
+                )}
+                <button onClick={() => { onNewTrade(viewDateISO); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ ...btnP, padding: "7px 14px", fontSize: 12 }}>+ New Trade</button>
+              </div>
             </div>
 
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontWeight: 600, fontFamily: mono, marginBottom: 6 }}>Fundamentals</div>
-              <textarea
-                value={plan.pre_fundamentals}
-                onChange={e => updateField("pre_fundamentals", e.target.value)}
-                onBlur={handleBlur}
-                placeholder="Pre-market fundamentals notes..."
-                style={{ ...bigTA, minHeight: 140, background: T.card }}
-              />
-            </div>
-
-            <div>
-              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontWeight: 600, fontFamily: mono, marginBottom: 6 }}>Technicals</div>
-              <textarea
-                value={plan.pre_technicals}
-                onChange={e => updateField("pre_technicals", e.target.value)}
-                onBlur={handleBlur}
-                placeholder="Pre-market technicals notes..."
-                style={{ ...bigTA, minHeight: 140, background: T.card }}
-              />
-            </div>
+            {dayTrades.length === 0 ? (
+              <div style={{ padding: "16px 12px", background: T.cardAlt, borderRadius: 8, border: `1px dashed ${T.border}`, textAlign: "center", fontSize: 12, color: T.textMid }}>
+                Click "+ New Trade" to log a trade for {viewDateISO}.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {dayTrades.map(t => (
+                  <div key={t.id} style={{ background: T.cardAlt, border: `1px solid ${T.borderLight}`, borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <Pill text={t.pair} type="pair" />
+                      <Pill text={t.direction} />
+                      <Pill text={t.result} />
+                      <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{t.session}</span>
+                    </div>
+                    <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
+                      <span style={{ fontSize: 11, fontFamily: mono, color: cP(t.pnl_usd) }}>{fU(t.pnl_usd)}</span>
+                      <button onClick={() => { onEditTrade(t); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* WHAT HAPPENED */}
-          <div style={{ marginBottom: 18 }}>
-            <div style={sectionLabel(T.purple)}>1 · What happened to the trade</div>
+          <div style={{ ...cardS, padding: 20, borderTop: `3px solid ${T.purple}` }}>
+            <div style={sectionLabel(T.purple)}>4 · What happened to the market</div>
             <div style={hintStyle}>The day as it played out. Were you right or wrong about bias? Did setups appear? How did you execute?</div>
             <textarea
               value={plan.post_what_happened}
               onChange={e => updateField("post_what_happened", e.target.value)}
               onBlur={handleBlur}
-              placeholder="USD dumped on weaker-than-expected CPI. My bullish bias was wrong from the start. Got short EURUSD at 1.0860 after London open, hit TP at 1.0810..."
+              placeholder="USD dumped on weaker CPI. My bullish bias was wrong. Got short EURUSD at 1.0860 after London open, hit TP at 1.0810..."
               style={bigTA}
             />
           </div>
 
           {/* MISTAKES */}
-          <div>
-            <div style={sectionLabel(T.purple)}>2 · Mistakes · where I broke my own rules</div>
-            <div style={hintStyle}>Be ruthless. Every place reality differed from your plan. No excuses, no justifications.</div>
+          <div style={{ ...cardS, padding: 20, borderTop: `3px solid ${T.purple}` }}>
+            <div style={sectionLabel(T.purple)}>5 · Mistakes · where I broke my own rules</div>
+            <div style={hintStyle}>Be ruthless. Every deviation. No excuses, no justifications.</div>
             <textarea
               value={plan.post_deviations}
               onChange={e => updateField("post_deviations", e.target.value)}
               onBlur={handleBlur}
-              placeholder="Plan said only USD longs but I shorted EURUSD because CPI changed things. That's a deviation even though it worked. Also took 3 trades not 2 as planned..."
+              placeholder="Plan said only USD longs but I shorted EURUSD. That's a deviation even though it worked. Took 3 trades not 2 as planned..."
               style={bigTA}
             />
+          </div>
+        </>
+      )}
+
+      {/* IF NO TRADE: short message */}
+      {plan.trade_taken === false && (
+        <div style={{ ...cardS, padding: 24, textAlign: "center" }}>
+          <div style={{ fontSize: 14, color: T.text, fontWeight: 600, marginBottom: 6 }}>✓ No-trade day logged</div>
+          <div style={{ fontSize: 12, color: T.textMid, fontStyle: "italic", maxWidth: 480, margin: "0 auto", lineHeight: 1.6 }}>
+            Discipline often looks like sitting on your hands. If the setup wasn't there, this is a win.
           </div>
         </div>
       )}
@@ -957,9 +976,6 @@ function DailyPlanPage({ user, activeAccount }) {
     </div>
   );
 }
-
-// Old small widget kept as a noop placeholder in case anything imports it — safe to delete later
-function DailyPlan() { return null; }
 
 // ══════════════════════════════════════════
 // DISCIPLINE TRACKER — month-paginated daily habit grid
@@ -1882,7 +1898,7 @@ function Journal({ user, onLogout }) {
     }
     setForm(emptyTrade()); setShowForm(false); setEditId(null);
   };
-  const editTrade = t => { setForm({ ...t, risk: t.risk || 1, adherence_checks: t.adherence_checks || {}, tags: t.tags || "" }); setEditId(t.id); setShowForm(true); setTab("log"); };
+  const editTrade = t => { setForm({ ...t, risk: t.risk || 1, adherence_checks: t.adherence_checks || {}, tags: t.tags || "" }); setEditId(t.id); setShowForm(true); };
   const deleteTrade = async id => {
     if (!confirm("Delete this trade?")) return;
     await supabase.from("trades").delete().eq("id", id);
@@ -2378,7 +2394,7 @@ function downloadJSON() {
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       <span style={{ fontSize: 14, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
                       <span style={{ fontSize: 12, fontFamily: mono, color: cP(t.pnl_usd) }}>{fU(t.pnl_usd)}</span>
-                      <button onClick={() => { setDayModal(null); editTrade(t); }} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
+                      <button onClick={() => { setDayModal(null); editTrade(t); setTab("log"); }} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
                     </div>
                   </div>
                   {/* Trade details */}
@@ -3019,19 +3035,18 @@ function downloadJSON() {
               </div>
             )}
 
-            {tab === "log" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {showForm && (
-                  <div style={{ ...cardS, padding: 22 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-                      <span style={{ fontSize: 15, fontWeight: 700 }}>{editId ? "Edit Trade" : "Log New Trade"}</span>
-                      <button onClick={() => { setShowForm(false); setEditId(null); }} style={btnG}>✕</button>
-                    </div>
+            {/* TRADE FORM — rendered across all tabs when active. Allows Daily page to open it inline. */}
+            {showForm && (
+              <div style={{ ...cardS, padding: 22, marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700 }}>{editId ? "Edit Trade" : "Log New Trade"}</span>
+                  <button onClick={() => { setShowForm(false); setEditId(null); }} style={btnG}>✕</button>
+                </div>
 
-                    {/* DAY CONTEXT — read-only embed of the daily plan for this trade's date */}
-                    <DayContextBlock user={user} activeAccount={activeAccount} dateISO={form.date} />
+                {/* DAY CONTEXT — read-only embed of the daily plan for this trade's date */}
+                <DayContextBlock user={user} activeAccount={activeAccount} dateISO={form.date} />
 
-                    {/* PRE-TRADE CHECKLIST */}
+                {/* PRE-TRADE CHECKLIST */}
                     {checklistItems.length > 0 ? (() => {
                       const checks = form.adherence_checks || {};
                       const tickedCount = checklistItems.filter(c => checks[c.id] === true).length;
@@ -3114,8 +3129,11 @@ function downloadJSON() {
                       <button onClick={saveTrade} style={btnP}>{editId ? "Update" : "Save Trade"}</button>
                       <button onClick={() => { setShowForm(false); setEditId(null); }} style={btnG}>Cancel</button>
                     </div>
-                  </div>
-                )}
+              </div>
+            )}
+
+            {tab === "log" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ ...cardS, padding: 12 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                     <div style={{ display: "flex", gap: 0, marginRight: 4 }}>
@@ -3702,7 +3720,13 @@ function downloadJSON() {
                     }}>{s.l}</button>
                   ))}
                 </div>
-                {dailySubTab === "daily" && <DailyPlanPage user={user} activeAccount={activeAccount} />}
+                {dailySubTab === "daily" && <DailyPlanPage
+                  user={user}
+                  activeAccount={activeAccount}
+                  accountTrades={trades}
+                  onNewTrade={(dateISO) => { setForm({ ...emptyTrade(), date: dateISO }); setEditId(null); setShowForm(true); }}
+                  onEditTrade={(t) => { editTrade(t); }}
+                />}
                 {dailySubTab === "weekly" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} lockedPeriodType="week" />}
                 {dailySubTab === "monthly" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} lockedPeriodType="month" />}
               </div>
