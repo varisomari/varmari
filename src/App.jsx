@@ -721,12 +721,12 @@ function DailyPlanPage({ user, activeAccount }) {
     return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   };
 
-  const hasPre = (plan.pre_fundamentals || "").trim() || (plan.pre_technicals || "").trim() || (plan.pre_bias || "").trim();
-  const hasPost = (plan.post_what_happened || "").trim() || (plan.post_deviations || "").trim() || (plan.post_lessons || "").trim();
+  const hasPre = (plan.pre_fundamentals || "").trim() || (plan.pre_technicals || "").trim();
+  const hasPost = (plan.post_what_happened || "").trim() || (plan.post_deviations || "").trim();
 
   const wordCount = (s) => (s || "").trim().split(/\s+/).filter(Boolean).length;
-  const preWords = wordCount(plan.pre_fundamentals) + wordCount(plan.pre_technicals) + wordCount(plan.pre_bias);
-  const postWords = wordCount(plan.post_what_happened) + wordCount(plan.post_deviations) + wordCount(plan.post_lessons);
+  const preWords = wordCount(plan.pre_fundamentals) + wordCount(plan.pre_technicals);
+  const postWords = wordCount(plan.post_what_happened) + wordCount(plan.post_deviations);
 
   const bigTA = {
     width: "100%",
@@ -849,7 +849,7 @@ function DailyPlanPage({ user, activeAccount }) {
             <span style={{ fontSize: 11, color: T.textLight, fontStyle: "italic" }}>Write before the session. 1.5 hour deep prep.</span>
           </div>
           <div style={{ fontSize: 12, color: T.textMid, marginBottom: 18, lineHeight: 1.55 }}>
-            Spend the time. Fundamentals first (the why), then technicals (the where), then a single line of bias (the what).
+            Fundamentals first (the why), then technicals (the where).
           </div>
 
           <div style={{ marginBottom: 18 }}>
@@ -864,7 +864,7 @@ function DailyPlanPage({ user, activeAccount }) {
             />
           </div>
 
-          <div style={{ marginBottom: 18 }}>
+          <div>
             <div style={sectionLabel(T.blue)}>2 · Technicals · the chart story</div>
             <div style={hintStyle}>Key levels, structure on each pair you're watching, where you'd enter, where you wouldn't. Around 30 minutes.</div>
             <textarea
@@ -873,19 +873,6 @@ function DailyPlanPage({ user, activeAccount }) {
               onBlur={handleBlur}
               placeholder="EURUSD: daily structure broken at 1.0850, watching for retest. GBPJPY: trending, looking for pullback to 190.50. Levels, zones, invalidations..."
               style={bigTA}
-            />
-          </div>
-
-          <div>
-            <div style={sectionLabel(T.blue)}>3 · Bias · the one line</div>
-            <div style={hintStyle}>Sum it up. What's your actual bias for today? If you can't say it in 2-3 sentences, the prep wasn't enough.</div>
-            <textarea
-              value={plan.pre_bias}
-              onChange={e => updateField("pre_bias", e.target.value)}
-              onBlur={handleBlur}
-              placeholder="USD bullish into NFP. Only longs on USD pairs, no shorts. Skip Asia session, focus London open onwards."
-              rows={3}
-              style={{ ...bigTA, minHeight: 90 }}
             />
           </div>
         </div>
@@ -906,12 +893,43 @@ function DailyPlanPage({ user, activeAccount }) {
             </div>
           </div>
           <div style={{ fontSize: 12, color: T.textMid, marginBottom: 18, lineHeight: 1.55 }}>
-            End-of-day honesty session. Did reality match the plan? Where did you slip? What would you do again, what wouldn't you?
+            End-of-day honesty session. Review your pre-market notes, write what actually happened, log mistakes.
           </div>
 
+          {/* PRE-MARKET MIRROR — Fundamentals + Technicals, EDITABLE (synced with Pre-Trade page) */}
+          <div style={{ background: T.blueBg + "70", border: `0.5px solid ${T.blue}30`, borderRadius: 10, padding: 14, marginBottom: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 10, color: T.blue, letterSpacing: 1.5, textTransform: "uppercase", fontWeight: 700, fontFamily: font }}>◧ Pre-market · from morning prep · editable</div>
+              <span style={{ fontSize: 10, color: T.textLight, fontStyle: "italic" }}>Synced with Pre-Trade page</span>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontWeight: 600, fontFamily: mono, marginBottom: 6 }}>Fundamentals</div>
+              <textarea
+                value={plan.pre_fundamentals}
+                onChange={e => updateField("pre_fundamentals", e.target.value)}
+                onBlur={handleBlur}
+                placeholder="Pre-market fundamentals notes..."
+                style={{ ...bigTA, minHeight: 140, background: T.card }}
+              />
+            </div>
+
+            <div>
+              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontWeight: 600, fontFamily: mono, marginBottom: 6 }}>Technicals</div>
+              <textarea
+                value={plan.pre_technicals}
+                onChange={e => updateField("pre_technicals", e.target.value)}
+                onBlur={handleBlur}
+                placeholder="Pre-market technicals notes..."
+                style={{ ...bigTA, minHeight: 140, background: T.card }}
+              />
+            </div>
+          </div>
+
+          {/* WHAT HAPPENED */}
           <div style={{ marginBottom: 18 }}>
-            <div style={sectionLabel(T.purple)}>1 · What happened · the day as it played out</div>
-            <div style={hintStyle}>Recap the market move and your actions. Were you right or wrong about bias? Did setups appear?</div>
+            <div style={sectionLabel(T.purple)}>1 · What happened to the trade</div>
+            <div style={hintStyle}>The day as it played out. Were you right or wrong about bias? Did setups appear? How did you execute?</div>
             <textarea
               value={plan.post_what_happened}
               onChange={e => updateField("post_what_happened", e.target.value)}
@@ -921,26 +939,15 @@ function DailyPlanPage({ user, activeAccount }) {
             />
           </div>
 
-          <div style={{ marginBottom: 18 }}>
-            <div style={sectionLabel(T.purple)}>2 · Deviations · where I broke my own rules</div>
+          {/* MISTAKES */}
+          <div>
+            <div style={sectionLabel(T.purple)}>2 · Mistakes · where I broke my own rules</div>
             <div style={hintStyle}>Be ruthless. Every place reality differed from your plan. No excuses, no justifications.</div>
             <textarea
               value={plan.post_deviations}
               onChange={e => updateField("post_deviations", e.target.value)}
               onBlur={handleBlur}
               placeholder="Plan said only USD longs but I shorted EURUSD because CPI changed things. That's a deviation even though it worked. Also took 3 trades not 2 as planned..."
-              style={bigTA}
-            />
-          </div>
-
-          <div>
-            <div style={sectionLabel(T.purple)}>3 · Lessons · what to actually do differently</div>
-            <div style={hintStyle}>One or two concrete rules to test tomorrow. "Be more patient" is useless. "Don't trade in the 15min before CPI" is a rule.</div>
-            <textarea
-              value={plan.post_lessons}
-              onChange={e => updateField("post_lessons", e.target.value)}
-              onBlur={handleBlur}
-              placeholder="Tomorrow: don't open a position in the 30min before high-impact news. If bias gets invalidated by data, sit out the next 1hr to let the move stabilize."
               style={bigTA}
             />
           </div>
