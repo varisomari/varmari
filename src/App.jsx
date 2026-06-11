@@ -1201,22 +1201,35 @@ function DisciplinePage({ user }) {
   const fieldStreaks = useMemo(() => {
     const result = {};
     fields.forEach(f => {
-      let streak = 0;
-      const d = new Date();
-      // Only count if we're viewing the current month or any past month — streaks count consecutively from today back
-      while (true) {
-        const iso = isoDate(d);
-        // Only count back as far as the start of the viewed month for display purposes
-        if (d.getFullYear() < year || (d.getFullYear() === year && d.getMonth() < monthIdx)) break;
+      // Build a sorted list of days in viewed month with their checked status
+      const monthDays = [];
+      for (let day = 1; day <= new Date(year, monthIdx + 1, 0).getDate(); day++) {
+        const iso = isoDate(new Date(year, monthIdx, day, 12, 0, 0, 0));
+        // Skip future days when calculating current month
+        if (iso > isoDate(new Date())) continue;
         const checks = (days[iso] || {}).checks || {};
-        if (checks[f.key]) {
-          streak++;
-          d.setDate(d.getDate() - 1);
-        } else {
-          break;
-        }
+        monthDays.push({ iso, checked: !!checks[f.key] });
       }
-      result[f.key] = streak;
+      // Total ticked
+      const total = monthDays.filter(d => d.checked).length;
+      // Best streak in this month (longest consecutive run of checked days)
+      let bestStreak = 0;
+      let currentRun = 0;
+      monthDays.forEach(d => {
+        if (d.checked) {
+          currentRun++;
+          if (currentRun > bestStreak) bestStreak = currentRun;
+        } else {
+          currentRun = 0;
+        }
+      });
+      // Current ongoing streak (from latest counted day, going back)
+      let ongoing = 0;
+      for (let i = monthDays.length - 1; i >= 0; i--) {
+        if (monthDays[i].checked) ongoing++;
+        else break;
+      }
+      result[f.key] = { total, bestStreak, ongoing };
     });
     return result;
   }, [fields, days, year, monthIdx]);
@@ -1262,19 +1275,27 @@ function DisciplinePage({ user }) {
         </div>
       </div>
 
-      {/* PER-FIELD STREAKS (only meaningful when viewing current month) */}
-      {isCurrentMonth && fields.length > 0 && (
+      {/* PER-FIELD STATS — visible on any month */}
+      {fields.length > 0 && (
         <div style={{ ...cardS, padding: 14 }}>
-          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 10 }}>Current Streaks · Consecutive days ticked from today</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+          <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontFamily: font, fontWeight: 700, marginBottom: 10 }}>
+            {isCurrentMonth ? "This month · running totals" : `${monthLabel} · final totals`}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
             {fields.map(f => {
-              const s = fieldStreaks[f.key] || 0;
-              const color = s >= 7 ? T.green : s >= 3 ? T.amber : s > 0 ? T.text : T.textLight;
+              const s = fieldStreaks[f.key] || { total: 0, bestStreak: 0, ongoing: 0 };
+              const totalColor = s.total >= 15 ? T.green : s.total >= 7 ? T.amber : s.total > 0 ? T.text : T.textLight;
               return (
-                <div key={f.key} style={{ background: T.cardAlt, borderRadius: 8, padding: "10px 12px", border: `1px solid ${T.borderLight}` }}>
-                  <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.5, textTransform: "uppercase", fontFamily: mono, marginBottom: 4 }}>{f.label}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: mono, color, lineHeight: 1 }}>{s}</div>
-                  <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 2 }}>{s === 1 ? "day" : "days"}</div>
+                <div key={f.key} style={{ background: T.cardAlt, borderRadius: 10, padding: "10px 12px", border: `0.5px solid ${T.borderLight}` }}>
+                  <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.5, textTransform: "uppercase", fontFamily: font, fontWeight: 700, marginBottom: 6 }}>{f.label}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 22, fontWeight: 700, fontFamily: mono, color: totalColor, lineHeight: 1 }}>{s.total}</span>
+                    <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>days ticked</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, fontSize: 10, color: T.textMid, fontFamily: mono }}>
+                    <span title="Longest consecutive run in this month">Best: <strong style={{ color: T.text }}>{s.bestStreak}</strong></span>
+                    {isCurrentMonth && <span title="Current consecutive run from latest day">Now: <strong style={{ color: s.ongoing > 0 ? T.green : T.textLight }}>{s.ongoing}</strong></span>}
+                  </div>
                 </div>
               );
             })}
@@ -1294,10 +1315,10 @@ function DisciplinePage({ user }) {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: mono, minWidth: 400 + fields.length * 80 }}>
               <thead>
-                <tr style={{ background: T.headerBg }}>
-                  <th style={{ textAlign: "left", padding: "12px 16px", color: "rgba(255,255,255,0.7)", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", position: "sticky", top: 0, background: T.headerBg, minWidth: 160 }}>Date</th>
+                <tr style={{ background: T.cardAlt, borderBottom: `1px solid ${T.border}` }}>
+                  <th style={{ textAlign: "left", padding: "12px 16px", color: T.textMid, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, position: "sticky", top: 0, background: T.cardAlt, minWidth: 160 }}>Date</th>
                   {fields.map(f => (
-                    <th key={f.key} style={{ textAlign: "center", padding: "12px 8px", color: "#fff", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", position: "sticky", top: 0, background: T.headerBg, minWidth: 80 }}>
+                    <th key={f.key} style={{ textAlign: "center", padding: "12px 8px", color: T.text, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, position: "sticky", top: 0, background: T.cardAlt, minWidth: 80 }}>
                       {f.label}
                     </th>
                   ))}
@@ -3217,17 +3238,17 @@ function downloadJSON() {
                             const gUsd = g.trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
 
                             rows.push(
-                              <tr key={"hdr-" + g.key} style={{ background: T.headerBg }}>
-                                <td colSpan={14} style={{ padding: "10px 12px", color: "#fff", fontFamily: mono, fontSize: 11, letterSpacing: 0.5 }}>
+                              <tr key={"hdr-" + g.key} style={{ background: T.cardAlt, borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
+                                <td colSpan={14} style={{ padding: "10px 12px", color: T.text, fontFamily: mono, fontSize: 11, letterSpacing: 0.5 }}>
                                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                                     <span style={{ fontWeight: 700 }}>
                                       {groupBy === "week" ? "📅 " : "🗓️ "}{labelFor(g.key)}
                                     </span>
                                     <div style={{ display: "flex", gap: 14, fontSize: 11, alignItems: "center", flexWrap: "wrap" }}>
-                                      <span style={{ background: "rgba(255,255,255,0.1)", padding: "2px 8px", borderRadius: 4 }}>{gN} {gN === 1 ? "trade" : "trades"}</span>
+                                      <span style={{ background: T.card, padding: "2px 8px", borderRadius: 4, color: T.textMid, border: `0.5px solid ${T.border}` }}>{gN} {gN === 1 ? "trade" : "trades"}</span>
                                       <span style={{ color: T.green }}>{gW}W</span>
                                       <span style={{ color: T.red }}>{gL}L</span>
-                                      {gBE > 0 && <span style={{ color: "rgba(255,255,255,0.6)" }}>{gBE}BE</span>}
+                                      {gBE > 0 && <span style={{ color: T.textLight }}>{gBE}BE</span>}
                                       <span style={{ color: gWR >= 50 ? T.green : T.red, fontWeight: 600 }}>{(gW + gL) > 0 ? `${gWR.toFixed(0)}%` : "—"}</span>
                                       <span style={{ color: gPnl >= 0 ? T.green : T.red, fontWeight: 700 }}>{fP(gPnl)}</span>
                                       <span style={{ color: gUsd >= 0 ? T.green : T.red, fontWeight: 600 }}>{fU(gUsd)}</span>
