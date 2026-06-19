@@ -115,7 +115,7 @@ const emptyTrade = () => ({
   entry: "", exit: "", rr: "", max_r: "", pnl_pct: "", result: "Win",
   exec_link: "", bias_link: "",
   notes_technical: "", notes_fundamental: "", notes_mistakes: "",
-  adherence_checks: {}, tags: "",
+  trade_types: "", tags: "",
 });
 
 // Recap = 2 fields: positives (green) + negatives (red).
@@ -437,42 +437,42 @@ function PairsModal({ pairs, onClose, onAdd, onUpdate, onDelete, onResetDefaults
 }
 
 // ══════════════════════════════════════════
-// CHECKLIST (RULES) MANAGER MODAL
+// TRADE TYPES MANAGER MODAL — editable list, same pattern as PairsModal
 // ══════════════════════════════════════════
-function ChecklistModal({ items, onClose, onAdd, onUpdate, onDelete }) {
+function TradeTypesModal({ types, onClose, onAdd, onUpdate, onDelete }) {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const handleAdd = async () => { const name = newName.trim(); if (!name) return; await onAdd(name); setNewName(""); };
-  const handleStartEdit = (c) => { setEditingId(c.id); setEditValue(c.name); };
+  const handleStartEdit = (t) => { setEditingId(t.id); setEditValue(t.name); };
   const handleSaveEdit = async () => { if (!editValue.trim()) return; await onUpdate(editingId, editValue.trim()); setEditingId(null); setEditValue(""); };
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 20 }}>
       <div style={{ ...cardS, padding: 24, width: "100%", maxWidth: 580, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 16, fontWeight: 700 }}>Pre-Trade Rules</span>
+          <span style={{ fontSize: 16, fontWeight: 700 }}>Trade Types</span>
           <button onClick={onClose} style={btnG}>✕</button>
         </div>
-        <div style={{ fontSize: 11, color: T.textMid, marginBottom: 16, lineHeight: 1.5, fontFamily: mono }}>
-          Define rules you commit to follow before entering a trade. Each new trade asks you to tick which rules you actually followed — your adherence score reveals whether following them is profitable.
+        <div style={{ fontSize: 11, color: T.textMid, marginBottom: 16, lineHeight: 1.5 }}>
+          Categories you tag each trade with. Multi-select on the trade form — a trade can be both "Transition" AND "Fundamental".
         </div>
 
         <div style={{ borderBottom: `1px solid ${T.border}`, paddingBottom: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Add New Rule</div>
+          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Add New Type</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <input type="text" value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} placeholder="e.g. Bias confirmed on higher TF" style={inputS} />
+            <input type="text" value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} placeholder="e.g. Confirmation" style={inputS} />
             <button onClick={handleAdd} style={{ ...btnP, padding: "9px 16px", whiteSpace: "nowrap" }}>+ Add</button>
           </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", marginBottom: 12 }}>
-          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Your Rules ({items.length})</div>
-          {items.length === 0 ? <div style={{ color: T.textLight, fontSize: 13, padding: 20, textAlign: "center", background: T.cardAlt, borderRadius: 8, lineHeight: 1.6 }}>
-            No rules yet.<br /><span style={{ fontSize: 11, opacity: 0.7 }}>Add a few rules above. Examples: "Bias confirmed on Daily", "Risk ≤ 1%", "Not within 1h of news", "R:R minimum 1:2".</span>
+          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Your Types ({types.length})</div>
+          {types.length === 0 ? <div style={{ color: T.textLight, fontSize: 13, padding: 20, textAlign: "center", background: T.cardAlt, borderRadius: 8, lineHeight: 1.6 }}>
+            No types yet.<br /><span style={{ fontSize: 11, opacity: 0.7 }}>Examples: Transition, Re-Transition, Confirmation, Continuation, Fundamental, Technical.</span>
           </div>
-           : items.map((c, idx) => (
-            <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: T.cardAlt, borderRadius: 8, marginBottom: 4 }}>
-              {editingId === c.id ? (
+           : types.map((t, idx) => (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: T.cardAlt, borderRadius: 8, marginBottom: 4 }}>
+              {editingId === t.id ? (
                 <>
                   <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginRight: 8 }}>{idx + 1}.</span>
                   <input type="text" value={editValue} onChange={e => setEditValue(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSaveEdit(); if (e.key === "Escape") { setEditingId(null); setEditValue(""); } }} autoFocus style={{ ...inputS, flex: 1, marginRight: 8 }} />
@@ -483,11 +483,11 @@ function ChecklistModal({ items, onClose, onAdd, onUpdate, onDelete }) {
                 <>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
                     <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>{idx + 1}.</span>
-                    <span style={{ fontSize: 13, color: T.text }}>{c.name}</span>
+                    <span style={{ fontSize: 13, color: T.text }}>{t.name}</span>
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => handleStartEdit(c)} style={{ ...btnG, fontSize: 10, padding: "4px 10px" }}>Edit</button>
-                    <button onClick={() => onDelete(c.id)} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.red, borderColor: T.red + "40" }}>Delete</button>
+                    <button onClick={() => handleStartEdit(t)} style={{ ...btnG, fontSize: 10, padding: "4px 10px" }}>Edit</button>
+                    <button onClick={() => onDelete(t.id)} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.red, borderColor: T.red + "40" }}>Delete</button>
                   </div>
                 </>
               )}
@@ -498,6 +498,7 @@ function ChecklistModal({ items, onClose, onAdd, onUpdate, onDelete }) {
     </div>
   );
 }
+
 
 // ══════════════════════════════════════════
 // DAY CONTEXT BLOCK — read-only embed of that day's plan, shown inside the Trade Form.
@@ -1762,8 +1763,8 @@ function Journal({ user, onLogout }) {
   const [activeAccount, setActiveAccount] = useState(null);
   const [trades, setTrades] = useState([]);
   const [pairs, setPairs] = useState([]);
-  const [checklistItems, setChecklistItems] = useState([]);
-  const [showChecklistModal, setShowChecklistModal] = useState(false);
+  const [tradeTypes, setTradeTypes] = useState([]);
+  const [showTradeTypesModal, setShowTradeTypesModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showPairsModal, setShowPairsModal] = useState(false);
@@ -1801,8 +1802,14 @@ function Journal({ user, onLogout }) {
         const { data: seeded } = await supabase.from("user_pairs").insert(seedRows).select();
         setPairs((seeded || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
       }
-      const { data: checklistData } = await supabase.from("user_checklist_items").select("*").order("sort_order", { ascending: true });
-      setChecklistItems(checklistData || []);
+      const { data: typeData } = await supabase.from("user_trade_types").select("*").order("sort_order", { ascending: true });
+      if (typeData && typeData.length > 0) setTradeTypes(typeData);
+      else {
+        const DEFAULT_TYPES = ["Transition", "Re-Transition", "Confirmation", "Continuation", "Fundamental", "Technical", "Fundamental + Technical"];
+        const seedRows = DEFAULT_TYPES.map((name, i) => ({ user_id: user.id, name, sort_order: i }));
+        const { data: seeded } = await supabase.from("user_trade_types").insert(seedRows).select();
+        setTradeTypes((seeded || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+      }
       setLoading(false);
     };
     loadAll();
@@ -1867,24 +1874,24 @@ function Journal({ user, onLogout }) {
     setPairs((seeded || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
   };
 
-  // Checklist (Rules) CRUD
-  const addChecklistItem = async (name) => {
-    if (checklistItems.some(c => c.name.toLowerCase() === name.toLowerCase())) { alert("That rule already exists."); return; }
-    const nextOrder = checklistItems.length > 0 ? Math.max(...checklistItems.map(c => c.sort_order || 0)) + 1 : 0;
-    const { data, error } = await supabase.from("user_checklist_items").insert({ user_id: user.id, name, sort_order: nextOrder }).select().single();
+  // Trade Types CRUD
+  const addTradeType = async (name) => {
+    if (tradeTypes.some(t => t.name.toLowerCase() === name.toLowerCase())) { alert("That type already exists."); return; }
+    const nextOrder = tradeTypes.length > 0 ? Math.max(...tradeTypes.map(t => t.sort_order || 0)) + 1 : 0;
+    const { data, error } = await supabase.from("user_trade_types").insert({ user_id: user.id, name, sort_order: nextOrder }).select().single();
     if (error) { alert("Error: " + error.message); return; }
-    setChecklistItems(p => [...p, data]);
+    setTradeTypes(p => [...p, data]);
   };
-  const updateChecklistItem = async (id, newName) => {
-    if (checklistItems.some(c => c.id !== id && c.name.toLowerCase() === newName.toLowerCase())) { alert("That rule name already exists."); return; }
-    const { data, error } = await supabase.from("user_checklist_items").update({ name: newName }).eq("id", id).select().single();
+  const updateTradeType = async (id, newName) => {
+    if (tradeTypes.some(t => t.id !== id && t.name.toLowerCase() === newName.toLowerCase())) { alert("That type name already exists."); return; }
+    const { data, error } = await supabase.from("user_trade_types").update({ name: newName }).eq("id", id).select().single();
     if (error) { alert("Error: " + error.message); return; }
-    setChecklistItems(p => p.map(x => x.id === id ? data : x));
+    setTradeTypes(p => p.map(x => x.id === id ? data : x));
   };
-  const deleteChecklistItem = async (id) => {
-    if (!confirm("Delete this rule? Existing trades keep their adherence data.")) return;
-    await supabase.from("user_checklist_items").delete().eq("id", id);
-    setChecklistItems(p => p.filter(x => x.id !== id));
+  const deleteTradeType = async (id) => {
+    if (!confirm("Delete this type? Existing trades keep their type tags (historical).")) return;
+    await supabase.from("user_trade_types").delete().eq("id", id);
+    setTradeTypes(p => p.filter(x => x.id !== id));
   };
 
   const saveTrade = async () => {
@@ -1906,7 +1913,7 @@ function Journal({ user, onLogout }) {
       result: form.result,
       exec_link: form.exec_link, bias_link: form.bias_link,
       notes_technical: form.notes_technical, notes_fundamental: form.notes_fundamental, notes_mistakes: form.notes_mistakes,
-      adherence_checks: form.adherence_checks || {}, tags: normalizedTags,
+      trade_types: form.trade_types || "", tags: normalizedTags,
     };
     if (editId) {
       const { data, error } = await supabase.from("trades").update(payload).eq("id", editId).select().single();
@@ -1919,7 +1926,7 @@ function Journal({ user, onLogout }) {
     }
     setForm(emptyTrade()); setShowForm(false); setEditId(null);
   };
-  const editTrade = t => { setForm({ ...t, risk: t.risk || 1, adherence_checks: t.adherence_checks || {}, tags: t.tags || "" }); setEditId(t.id); setShowForm(true); };
+  const editTrade = t => { setForm({ ...t, risk: t.risk || 1, trade_types: t.trade_types || "", tags: t.tags || "" }); setEditId(t.id); setShowForm(true); };
   const deleteTrade = async id => {
     if (!confirm("Delete this trade?")) return;
     await supabase.from("trades").delete().eq("id", id);
@@ -2283,38 +2290,48 @@ function downloadJSON() {
     const yMin = Math.round(base * 0.88);
     const yMax = Math.round(base * 1.30);
 
-    // Adherence stats: bucket trades by adherence pct
-    let adherence = null;
-    if (checklistItems.length > 0) {
-      const buckets = { full: { trades: [], label: "100% Rules" }, partial: { trades: [], label: "Partial" }, low: { trades: [], label: "< 50% Rules" }, untracked: { trades: [], label: "No checklist" } };
+    // Trade Type stats: per-type W/L/WR/PnL across all trades
+    let typeStats = null;
+    if (tradeTypes.length > 0) {
+      const byType = {};
+      tradeTypes.forEach(tt => { byType[tt.name] = { name: tt.name, n: 0, w: 0, l: 0, pnl: 0, usd: 0 }; });
+      let untaggedN = 0, untaggedW = 0, untaggedL = 0, untaggedPnl = 0, untaggedUsd = 0;
       trades.forEach(t => {
-        const a = computeAdherence(t, checklistItems);
-        if (a == null) { buckets.untracked.trades.push(t); return; }
-        // Untracked = no boxes ticked AND adherence_checks is empty (likely legacy trade)
-        if (!t.adherence_checks || Object.keys(t.adherence_checks).length === 0) {
-          buckets.untracked.trades.push(t);
+        const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
+        if (types.length === 0) {
+          untaggedN++;
+          if (t.result === "Win") untaggedW++;
+          else if (t.result === "Loss") untaggedL++;
+          untaggedPnl += parseFloat(t.pnl_pct) || 0;
+          untaggedUsd += parseFloat(t.pnl_usd) || 0;
           return;
         }
-        if (a.pct === 100) buckets.full.trades.push(t);
-        else if (a.pct >= 50) buckets.partial.trades.push(t);
-        else buckets.low.trades.push(t);
+        types.forEach(name => {
+          if (!byType[name]) byType[name] = { name, n: 0, w: 0, l: 0, pnl: 0, usd: 0 };
+          byType[name].n++;
+          if (t.result === "Win") byType[name].w++;
+          else if (t.result === "Loss") byType[name].l++;
+          byType[name].pnl += parseFloat(t.pnl_pct) || 0;
+          byType[name].usd += parseFloat(t.pnl_usd) || 0;
+        });
       });
-      const stats = {};
-      Object.keys(buckets).forEach(k => {
-        const arr = buckets[k].trades;
-        const w = arr.filter(t => t.result === "Win").length;
-        const l = arr.filter(t => t.result === "Loss").length;
-        const wr = (w + l) > 0 ? (w / (w + l)) * 100 : null;
-        const pnl = arr.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
-        const usd = arr.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
-        const avgPnl = arr.length > 0 ? pnl / arr.length : 0;
-        stats[k] = { label: buckets[k].label, n: arr.length, w, l, wr, pnl, usd, avgPnl };
-      });
-      adherence = stats;
+      const list = Object.values(byType).map(x => ({
+        ...x,
+        wr: (x.w + x.l) > 0 ? (x.w / (x.w + x.l)) * 100 : null,
+        avgPnl: x.n > 0 ? x.pnl / x.n : 0,
+      })).filter(x => x.n > 0).sort((a, b) => b.pnl - a.pnl);
+      typeStats = {
+        list,
+        untagged: untaggedN > 0 ? {
+          name: "Untagged", n: untaggedN, w: untaggedW, l: untaggedL,
+          wr: (untaggedW + untaggedL) > 0 ? (untaggedW / (untaggedW + untaggedL)) * 100 : null,
+          pnl: untaggedPnl, usd: untaggedUsd, avgPnl: untaggedN > 0 ? untaggedPnl / untaggedN : 0,
+        } : null,
+      };
     }
 
-    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, avgIntendedR, avgRealizedR, exitQuality, adherence, tilt, pressed };
-  }, [trades, activeAccount, pairNames, checklistItems]);
+    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, avgIntendedR, avgRealizedR, exitQuality, typeStats, tilt, pressed };
+  }, [trades, activeAccount, pairNames, tradeTypes]);
 
   const filtered = useMemo(() => {
     let list = [...trades];
@@ -2368,7 +2385,7 @@ function downloadJSON() {
           {page === "journal" && activeAccount && (
             <>
               <button onClick={() => setShowPairsModal(true)} title="Manage Pairs" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⟡ Pairs ({pairs.length})</button>
-              <button onClick={() => setShowChecklistModal(true)} title="Manage Pre-Trade Rules" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>✓ Rules ({checklistItems.length})</button>
+              <button onClick={() => setShowTradeTypesModal(true)} title="Manage Trade Types" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⊞ Types ({tradeTypes.length})</button>
               <button onClick={() => setShowAccountModal(true)} style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, display: "inline-block" }}></span>
                 <span style={{ color: T.text, fontWeight: 500 }}>{activeAccount.name}</span>
@@ -2382,7 +2399,7 @@ function downloadJSON() {
 
       {showAccountModal && <AccountModal accounts={accounts} activeId={activeAccount?.id} onClose={() => activeAccount && setShowAccountModal(false)} onCreate={createAccount} onDelete={deleteAccount} onSelect={selectAccount} />}
       {showPairsModal && <PairsModal pairs={pairs} onClose={() => setShowPairsModal(false)} onAdd={addPair} onUpdate={updatePair} onDelete={deletePair} onResetDefaults={resetPairsToDefaults} />}
-      {showChecklistModal && <ChecklistModal items={checklistItems} onClose={() => setShowChecklistModal(false)} onAdd={addChecklistItem} onUpdate={updateChecklistItem} onDelete={deleteChecklistItem} />}
+      {showTradeTypesModal && <TradeTypesModal types={tradeTypes} onClose={() => setShowTradeTypesModal(false)} onAdd={addTradeType} onUpdate={updateTradeType} onDelete={deleteTradeType} />}
       {dayModal && (
         <div onClick={() => setDayModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 20 }}>
           <div onClick={e => e.stopPropagation()} style={{ ...cardS, width: "100%", maxWidth: 900, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
@@ -2425,13 +2442,15 @@ function downloadJSON() {
                     <div><span style={{ color: T.textLight }}>Exit:</span> {t.exit || "—"}</div>
                     <div><span style={{ color: T.textLight }}>R:R:</span> {t.rr || "—"}</div>
                     {t.result === "Win" && <div><span style={{ color: T.textLight }}>Max R:</span> {t.max_r || "—"}</div>}
-                    {(() => {
-                      const adh = computeAdherence(t, checklistItems);
-                      if (!adh) return null;
-                      const adhColor = adh.pct === 100 ? T.green : adh.pct >= 70 ? T.amber : T.red;
-                      return <div><span style={{ color: T.textLight }}>Adherence:</span> <span style={{ color: adhColor, fontWeight: 700 }}>{adh.ticked}/{adh.total} ({adh.pct.toFixed(0)}%)</span></div>;
-                    })()}
                   </div>
+                  {/* Trade Types */}
+                  {(t.trade_types || "").trim() && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+                      {(t.trade_types || "").split(",").map(s => s.trim()).filter(s => s).map(tt => (
+                        <span key={tt} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: T.purpleBg, color: T.purple, fontWeight: 600 }}>{tt}</span>
+                      ))}
+                    </div>
+                  )}
                   {/* Tags */}
                   {(t.tags || "").trim() && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
@@ -2609,21 +2628,11 @@ function downloadJSON() {
                     );
                   })()}
 
-                  {/* DISCIPLINE STRIP: Streak / Adherence / Drawdown · with More Stats expander */}
+                  {/* DISCIPLINE STRIP: Streak / Avg RR / Drawdown · with More Stats expander */}
                   {(() => {
-                    const currentStreak = S.maxS; // longest streak we have; could compute current ongoing later
-                    const adhPct = S.adherence ? (
-                      // Aggregate adherence across all tracked trades
-                      (() => {
-                        const f = S.adherence.full?.n || 0;
-                        const p = S.adherence.partial?.n || 0;
-                        const l = S.adherence.low?.n || 0;
-                        const tracked = f + p + l;
-                        if (tracked === 0) return null;
-                        return ((f * 1 + p * 0.7 + l * 0.3) / tracked) * 100;
-                      })()
-                    ) : null;
-                    const adhColor = adhPct == null ? T.textMid : adhPct >= 85 ? T.green : adhPct >= 65 ? T.amber : T.red;
+                    const currentStreak = S.maxS;
+                    const avgRR = S.avgRealizedR;
+                    const rrColor = avgRR == null ? T.textMid : avgRR >= 1.5 ? T.green : avgRR >= 1 ? T.amber : T.red;
                     return (
                       <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: "14px 20px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -2635,9 +2644,9 @@ function downloadJSON() {
                             </div>
                             <div style={{ width: 1, height: 22, background: T.border }}></div>
                             <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                              <span style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, fontWeight: 500 }}>Rules</span>
-                              <span style={{ fontSize: 20, color: adhColor, fontWeight: 600 }}>{adhPct == null ? "—" : `${adhPct.toFixed(0)}%`}</span>
-                              <span style={{ fontSize: 11, color: T.textMid }}>{adhPct == null ? "no data" : "followed"}</span>
+                              <span style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, fontWeight: 500 }}>Avg RR</span>
+                              <span style={{ fontSize: 20, color: rrColor, fontWeight: 600 }}>{avgRR == null ? "—" : `${avgRR >= 0 ? "+" : ""}${avgRR.toFixed(2)}R`}</span>
+                              <span style={{ fontSize: 11, color: T.textMid }}>realized</span>
                             </div>
                             <div style={{ width: 1, height: 22, background: T.border }}></div>
                             <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
@@ -2919,45 +2928,36 @@ function downloadJSON() {
                     </div>
                   </div>
 
-                  {/* RULE ADHERENCE PANEL */}
-                  {S.adherence && (
+                  {/* PERFORMANCE BY TRADE TYPE */}
+                  {S.typeStats && (S.typeStats.list.length > 0 || S.typeStats.untagged) && (
                     <div style={{ ...cardS, padding: 18 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Rule Adherence · Process vs Outcome</span>
-                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Is following your own rules profitable?</span>
+                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Performance by Trade Type</span>
+                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Which kinds of trades make you money?</span>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-                        {[
-                          { k: "full", color: T.green, icon: "✓" },
-                          { k: "partial", color: T.amber, icon: "◐" },
-                          { k: "low", color: T.red, icon: "✕" },
-                          { k: "untracked", color: T.textLight, icon: "—" },
-                        ].map(({ k, color, icon }) => {
-                          const b = S.adherence[k];
-                          if (!b || b.n === 0) return (
-                            <div key={k} style={{ background: T.cardAlt, border: `1px solid ${T.border}`, borderRadius: 10, padding: 14, opacity: 0.4 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                                <span style={{ fontSize: 14, color }}>{icon}</span>
-                                <span style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono }}>{b ? b.label : ""}</span>
-                              </div>
-                              <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>No trades</div>
-                            </div>
-                          );
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                        {S.typeStats.list.map(t => {
+                          const color = t.pnl >= 0 ? T.green : T.red;
                           return (
-                            <div key={k} style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 14 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                                <span style={{ fontSize: 14, color }}>{icon}</span>
-                                <span style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono }}>{b.label}</span>
-                              </div>
-                              <div style={{ fontSize: 20, fontWeight: 700, color: cP(b.pnl), fontFamily: mono, lineHeight: 1.1, marginBottom: 4 }}>{fP(b.pnl)}</div>
-                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 2 }}>{b.n} {b.n === 1 ? "trade" : "trades"} · {b.wr != null ? `${b.wr.toFixed(0)}% WR` : "—"}</div>
-                              <div style={{ fontSize: 11, color: cP(b.avgPnl), fontFamily: mono }}>Avg {fP(b.avgPnl)}</div>
+                            <div key={t.name} style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 14 }}>
+                              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>{t.name}</div>
+                              <div style={{ fontSize: 20, fontWeight: 700, color: cP(t.pnl), fontFamily: mono, lineHeight: 1.1, marginBottom: 4 }}>{fP(t.pnl)}</div>
+                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 2 }}>{t.n} {t.n === 1 ? "trade" : "trades"} · {t.wr != null ? `${t.wr.toFixed(0)}% WR` : "—"}</div>
+                              <div style={{ fontSize: 11, color: cP(t.avgPnl), fontFamily: mono }}>Avg {fP(t.avgPnl)}</div>
                             </div>
                           );
                         })}
+                        {S.typeStats.untagged && (
+                          <div style={{ background: T.cardAlt, border: `1px dashed ${T.border}`, borderRadius: 10, padding: 14, opacity: 0.7 }}>
+                            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Untagged</div>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: cP(S.typeStats.untagged.pnl), fontFamily: mono, lineHeight: 1.1, marginBottom: 4 }}>{fP(S.typeStats.untagged.pnl)}</div>
+                            <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 2 }}>{S.typeStats.untagged.n} {S.typeStats.untagged.n === 1 ? "trade" : "trades"} · {S.typeStats.untagged.wr != null ? `${S.typeStats.untagged.wr.toFixed(0)}% WR` : "—"}</div>
+                            <div style={{ fontSize: 11, color: cP(S.typeStats.untagged.avgPnl), fontFamily: mono }}>Avg {fP(S.typeStats.untagged.avgPnl)}</div>
+                          </div>
+                        )}
                       </div>
                       <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                        <strong style={{ color: T.amber }}>Read:</strong> If your 100% adherence trades make money and partial/low trades lose, the rules ARE your edge. If outcomes are similar regardless of adherence, either your rules aren't actually filtering anything, or luck is dominating sample size.
+                        <strong style={{ color: T.amber }}>Read:</strong> Each trade can have multiple types — totals here may exceed your trade count. Compare types: which categories print money, which lose? The losers are where you stop trading or refine your edge.
                       </div>
                     </div>
                   )}
@@ -3067,43 +3067,41 @@ function downloadJSON() {
                 {/* DAY CONTEXT — read-only embed of the daily plan for this trade's date */}
                 <DayContextBlock user={user} activeAccount={activeAccount} dateISO={form.date} />
 
-                {/* PRE-TRADE CHECKLIST */}
-                    {checklistItems.length > 0 ? (() => {
-                      const checks = form.adherence_checks || {};
-                      const tickedCount = checklistItems.filter(c => checks[c.id] === true).length;
-                      const pct = (tickedCount / checklistItems.length) * 100;
-                      const scoreColor = pct === 100 ? T.green : pct >= 70 ? T.amber : T.red;
+                {/* TRADE TYPE MULTI-SELECT */}
+                    {tradeTypes.length > 0 ? (() => {
+                      const selectedTypes = (form.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
+                      const toggleType = (name) => {
+                        const set = new Set(selectedTypes);
+                        if (set.has(name)) set.delete(name); else set.add(name);
+                        setForm({ ...form, trade_types: [...set].join(", ") });
+                      };
                       return (
                         <div style={{ background: T.cardAlt, border: `1px solid ${T.border}`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-                            <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700 }}>Pre-Trade Rules · Tick what you followed</span>
-                            <div style={{ display: "flex", gap: 10, alignItems: "center", fontFamily: mono, fontSize: 12 }}>
-                              <span style={{ color: T.textMid }}>Adherence:</span>
-                              <span style={{ color: scoreColor, fontWeight: 700 }}>{tickedCount} / {checklistItems.length}</span>
-                              <span style={{ color: scoreColor, fontWeight: 700 }}>({pct.toFixed(0)}%)</span>
-                            </div>
+                            <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700 }}>Trade Type · pick all that apply</span>
+                            <span style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>{selectedTypes.length} selected</span>
                           </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 6 }}>
-                            {checklistItems.map(c => {
-                              const isTicked = checks[c.id] === true;
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 6 }}>
+                            {tradeTypes.map(tt => {
+                              const isSel = selectedTypes.includes(tt.name);
                               return (
-                                <div key={c.id}
-                                  onClick={() => setForm({ ...form, adherence_checks: { ...checks, [c.id]: !isTicked } })}
+                                <div key={tt.id}
+                                  onClick={() => toggleType(tt.name)}
                                   style={{
                                     display: "flex", alignItems: "center", gap: 10,
                                     padding: "8px 12px", borderRadius: 8, cursor: "pointer",
-                                    background: isTicked ? T.greenBg : T.card,
-                                    border: `1px solid ${isTicked ? T.green + "60" : T.border}`,
+                                    background: isSel ? T.purpleBg : T.card,
+                                    border: `1px solid ${isSel ? T.purple + "60" : T.border}`,
                                   }}
                                 >
                                   <div style={{
                                     width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                                    background: isTicked ? T.green : T.card,
-                                    border: `1.5px solid ${isTicked ? T.green : T.textLight}`,
+                                    background: isSel ? T.purple : T.card,
+                                    border: `1.5px solid ${isSel ? T.purple : T.textLight}`,
                                     display: "flex", alignItems: "center", justifyContent: "center",
                                     color: "#fff", fontSize: 12, fontWeight: 700,
-                                  }}>{isTicked ? "✓" : ""}</div>
-                                  <span style={{ fontSize: 12, color: isTicked ? T.green : T.text, fontWeight: isTicked ? 600 : 400 }}>{c.name}</span>
+                                  }}>{isSel ? "✓" : ""}</div>
+                                  <span style={{ fontSize: 12, color: isSel ? T.purple : T.text, fontWeight: isSel ? 600 : 400 }}>{tt.name}</span>
                                 </div>
                               );
                             })}
@@ -3112,7 +3110,7 @@ function downloadJSON() {
                       );
                     })() : (
                       <div style={{ background: T.cardAlt, border: `1px dashed ${T.border}`, borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 11, color: T.textMid, fontFamily: mono, lineHeight: 1.5 }}>
-                        No pre-trade rules defined yet. Click <strong style={{ color: T.accent }}>✓ Rules</strong> in the top header to add your rules — they'll appear here as checkboxes for every new trade.
+                        No trade types defined yet. Click <strong style={{ color: T.accent }}>⊞ Types</strong> in the top header to add some.
                       </div>
                     )}
 
@@ -3558,80 +3556,67 @@ function downloadJSON() {
                     </div>
                   </div>
 
-                  {/* 5. RULE ADHERENCE PER MONTH */}
-                  {checklistItems.length > 0 && (
+                  {/* 5. TRADE TYPE PER MONTH */}
+                  {tradeTypes.length > 0 && (
                     <div style={{ ...cardS, padding: 18 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Rule Adherence per Month</span>
-                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Is process getting tighter or sloppier?</span>
+                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Trade Type per Month</span>
+                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Which types print, which lose, over time?</span>
                       </div>
                       {(() => {
-                        // Per-month adherence rates
-                        const monthAdh = {};
+                        // Build {typeName: {monthKey: {n, w, l, pnl}}}
+                        const typeMonthPnl = {};
+                        tradeTypes.forEach(tt => { typeMonthPnl[tt.name] = {}; });
                         last6.forEach(m => {
-                          const mTrades = trades.filter(t => t.date?.startsWith(m) && t.adherence_checks && Object.keys(t.adherence_checks).length > 0);
-                          if (mTrades.length === 0) { monthAdh[m] = null; return; }
-                          const pcts = mTrades.map(t => computeAdherence(t, checklistItems)?.pct ?? 0);
-                          const avgPct = pcts.reduce((s, p) => s + p, 0) / pcts.length;
-                          const fullCount = pcts.filter(p => p === 100).length;
-                          const fullTrades = mTrades.filter(t => computeAdherence(t, checklistItems)?.pct === 100);
-                          const partialTrades = mTrades.filter(t => {
-                            const a = computeAdherence(t, checklistItems);
-                            return a && a.pct < 100;
+                          tradeTypes.forEach(tt => { typeMonthPnl[tt.name][m] = { n: 0, w: 0, l: 0, pnl: 0 }; });
+                          const mTrades = trades.filter(t => t.date?.startsWith(m));
+                          mTrades.forEach(t => {
+                            const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
+                            types.forEach(name => {
+                              if (typeMonthPnl[name] && typeMonthPnl[name][m]) {
+                                typeMonthPnl[name][m].n++;
+                                if (t.result === "Win") typeMonthPnl[name][m].w++;
+                                else if (t.result === "Loss") typeMonthPnl[name][m].l++;
+                                typeMonthPnl[name][m].pnl += parseFloat(t.pnl_pct) || 0;
+                              }
+                            });
                           });
-                          const fullPnl = fullTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
-                          const partialPnl = partialTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
-                          monthAdh[m] = { tracked: mTrades.length, avgPct, fullCount, fullPnl, partialN: partialTrades.length, partialPnl };
                         });
+                        const typesWithData = tradeTypes.filter(tt => last6.some(m => typeMonthPnl[tt.name][m].n > 0));
+                        if (typesWithData.length === 0) return <div style={{ padding: 14, textAlign: "center", color: T.textLight, fontSize: 12 }}>No trades tagged with types in last 6 months. Open the trade form and pick types.</div>;
                         return (
                           <div style={{ overflowX: "auto" }}>
                             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 600 }}>
                               <thead>
                                 <tr style={{ background: T.cardAlt }}>
-                                  <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Metric</th>
+                                  <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Type</th>
                                   {last6.map(m => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
+                                  <th style={{ textAlign: "right", padding: "8px 10px", color: T.purple, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", fontWeight: 700 }}>Total</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                <tr style={{ background: T.card }}>
-                                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Avg Adherence %</td>
-                                  {last6.map(m => {
-                                    const a = monthAdh[m];
-                                    if (!a) return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textLight, opacity: 0.4 }}>—</td>;
-                                    return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: a.avgPct === 100 ? T.green : a.avgPct >= 70 ? T.amber : T.red, fontWeight: 700 }}>{a.avgPct.toFixed(0)}%</td>;
-                                  })}
-                                </tr>
-                                <tr style={{ background: T.cardAlt }}>
-                                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>100% Rule Trades</td>
-                                  {last6.map(m => {
-                                    const a = monthAdh[m];
-                                    if (!a) return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textLight, opacity: 0.4 }}>—</td>;
-                                    return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}` }}>{a.fullCount} / {a.tracked}</td>;
-                                  })}
-                                </tr>
-                                <tr style={{ background: T.card }}>
-                                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>100% Adherence PnL</td>
-                                  {last6.map(m => {
-                                    const a = monthAdh[m];
-                                    if (!a || a.fullCount === 0) return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textLight, opacity: 0.4 }}>—</td>;
-                                    return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(a.fullPnl), fontWeight: 700 }}>{fP(a.fullPnl)}</td>;
-                                  })}
-                                </tr>
-                                <tr style={{ background: T.cardAlt }}>
-                                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Partial Adherence PnL</td>
-                                  {last6.map(m => {
-                                    const a = monthAdh[m];
-                                    if (!a || a.partialN === 0) return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textLight, opacity: 0.4 }}>—</td>;
-                                    return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(a.partialPnl), fontWeight: 700 }}>{fP(a.partialPnl)}</td>;
-                                  })}
-                                </tr>
+                                {typesWithData.map((tt, i) => {
+                                  const totalPnl = last6.reduce((s, m) => s + typeMonthPnl[tt.name][m].pnl, 0);
+                                  const totalN = last6.reduce((s, m) => s + typeMonthPnl[tt.name][m].n, 0);
+                                  return (
+                                    <tr key={tt.name} style={{ background: i % 2 === 0 ? T.card : T.cardAlt }}>
+                                      <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.text, fontWeight: 600 }}>{tt.name}</td>
+                                      {last6.map(m => {
+                                        const cell = typeMonthPnl[tt.name][m];
+                                        if (cell.n === 0) return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textLight, opacity: 0.4 }}>—</td>;
+                                        return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(cell.pnl), fontWeight: 700 }}>{fP(cell.pnl)}<div style={{ fontSize: 9, color: T.textLight, fontWeight: 400 }}>{cell.n}T</div></td>;
+                                      })}
+                                      <td style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(totalPnl), fontWeight: 700, background: T.purpleBg + "50" }}>{fP(totalPnl)}<div style={{ fontSize: 9, color: T.textLight, fontWeight: 400 }}>{totalN}T</div></td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
                         );
                       })()}
                       <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                        <strong style={{ color: T.amber }}>Read:</strong> 100% adherence rows should consistently outperform partial. If they don't over many months, your rules are wrong (not your discipline).
+                        <strong style={{ color: T.amber }}>Read:</strong> Types with consistent green Total = your real edge. Types that flip month-to-month = noise or you're forcing the setup. Types with consistent red = stop taking them.
                       </div>
                     </div>
                   )}
