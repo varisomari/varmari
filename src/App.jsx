@@ -159,6 +159,64 @@ function Stat({ label, value, color, sub, icon }) {
   </div>;
 }
 
+// ══════════════════════════════════════════
+// RISK GAUGES — running totals for today / week / month
+// Self-monitoring: no caps, just visibility
+// ══════════════════════════════════════════
+function RiskGauges({ gauges, compact }) {
+  if (!gauges) return null;
+  const { td, wk, mo } = gauges;
+  // Color logic:
+  // - Green if positive
+  // - Amber if 0 to -1% today / -3% week / -5% month
+  // - Red if worse
+  const colorFor = (pnl, redThr) => {
+    if (pnl > 0) return T.green;
+    if (pnl === 0) return T.textMid;
+    if (pnl >= -redThr / 2) return T.amber;
+    return T.red;
+  };
+  const fmt = (n) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}%`;
+  const fmtUsd = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(0)}`;
+  const tdColor = colorFor(td.pnl, 2);
+  const wkColor = colorFor(wk.pnl, 5);
+  const moColor = colorFor(mo.pnl, 8);
+
+  if (compact) {
+    return (
+      <div style={{ display: "flex", gap: 16, padding: "8px 12px", background: T.cardAlt, border: `0.5px solid ${T.border}`, borderRadius: 8, fontSize: 12, fontFamily: font, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>P&L Today / Wk / Mo</span>
+        <span style={{ color: tdColor, fontWeight: 700 }}>{fmt(td.pnl)}</span>
+        <span style={{ color: T.textLight }}>·</span>
+        <span style={{ color: wkColor, fontWeight: 700 }}>{fmt(wk.pnl)}</span>
+        <span style={{ color: T.textLight }}>·</span>
+        <span style={{ color: moColor, fontWeight: 700 }}>{fmt(mo.pnl)}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+      {[
+        { label: "Today", data: td, color: tdColor },
+        { label: "This week", data: wk, color: wkColor },
+        { label: "This month", data: mo, color: moColor },
+      ].map(({ label, data, color }) => (
+        <div key={label} style={{ background: T.card, border: `0.5px solid ${T.border}`, borderLeft: `3px solid ${color}`, borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }}>{label}</div>
+            <div style={{ fontSize: 11, color: T.textMid, marginTop: 2 }}>{data.n} {data.n === 1 ? "trade" : "trades"}</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 17, color, fontWeight: 700, lineHeight: 1, letterSpacing: -0.3 }}>{fmt(data.pnl)}</div>
+            <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 3 }}>{fmtUsd(data.usd)}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -501,6 +559,390 @@ function TradeTypesModal({ types, onClose, onAdd, onUpdate, onDelete }) {
 
 
 // ══════════════════════════════════════════
+// GLOBAL SEARCH MODAL — searches across trades, daily plans, recaps
+// ══════════════════════════════════════════
+function GlobalSearchModal({ user, activeAccount, onClose, onOpenTrade, onOpenDay, onOpenRecap }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+
+  const runSearch = async (query) => {
+    if (!activeAccount || !query.trim() || query.trim().length < 2) { setResults(null); return; }
+    setSearching(true);
+    const term = query.trim();
+    const ilike = `%${term.replace(/[%_]/g, "\\$&")}%`;
+
+    // Search trades
+    const tradesP = supabase.from("trades")
+      .select("*")
+      .eq("account_id", activeAccount.id)
+      .or(`notes_technical.ilike.${ilike},notes_fundamental.ilike.${ilike},notes_mistakes.ilike.${ilike},tags.ilike.${ilike},trade_types.ilike.${ilike},pair.ilike.${ilike}`)
+      .order("date", { ascending: false })
+      .limit(40);
+
+    // Search daily plans
+    const plansP = supabase.from("daily_plans")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("account_id", activeAccount.id)
+      .or(`pre_fundamentals.ilike.${ilike},pre_technicals.ilike.${ilike},post_what_happened.ilike.${ilike},post_deviations.ilike.${ilike}`)
+      .order("date", { ascending: false })
+      .limit(40);
+
+    // Search recaps
+    const recapsP = supabase.from("recaps")
+      .select("*")
+      .eq("user_id", user.id)
+      .or(`positives_text.ilike.${ilike},negatives_text.ilike.${ilike},worked_text.ilike.${ilike},didnt_work_text.ilike.${ilike},pattern_text.ilike.${ilike},change_text.ilike.${ilike}`)
+      .order("period_date", { ascending: false })
+      .limit(20);
+
+    const [tradesR, plansR, recapsR] = await Promise.all([tradesP, plansP, recapsP]);
+    setResults({
+      trades: tradesR.data || [],
+      plans: plansR.data || [],
+      recaps: recapsR.data || [],
+      term,
+    });
+    setSearching(false);
+  };
+
+  useEffect(() => {
+    const t = setTimeout(() => runSearch(q), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  // Highlight matching text
+  const highlight = (text, term) => {
+    if (!text || !term) return text;
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+    return parts.map((p, i) => p.toLowerCase() === term.toLowerCase()
+      ? <mark key={i} style={{ background: T.accentBg, color: T.accent, padding: "0 2px", fontWeight: 700 }}>{p}</mark>
+      : p);
+  };
+
+  // Pull a snippet from text around the term
+  const snippet = (text, term, len = 140) => {
+    if (!text) return "";
+    const lower = text.toLowerCase();
+    const idx = lower.indexOf(term.toLowerCase());
+    if (idx === -1) return text.slice(0, len) + (text.length > len ? "..." : "");
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(text.length, idx + term.length + 100);
+    return (start > 0 ? "..." : "") + text.slice(start, end) + (end < text.length ? "..." : "");
+  };
+
+  const findMatchField = (obj, term, fields) => {
+    for (const f of fields) {
+      const v = obj[f];
+      if (v && v.toLowerCase().includes(term.toLowerCase())) return { field: f, text: v };
+    }
+    return null;
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 20 }}>
+      <div style={{ ...cardS, padding: 0, width: "100%", maxWidth: 720, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Header with input */}
+        <div style={{ padding: "14px 18px", borderBottom: `0.5px solid ${T.border}`, background: T.card }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span style={{ fontSize: 16, color: T.textMid }}>⌕</span>
+            <input
+              type="text"
+              autoFocus
+              placeholder="Search trades, plans, recaps..."
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              onKeyDown={e => { if (e.key === "Escape") onClose(); }}
+              style={{
+                flex: 1,
+                border: "none", background: "transparent",
+                fontSize: 16, fontFamily: font, color: T.text,
+                outline: "none", padding: "6px 0",
+              }}
+            />
+            <button onClick={onClose} style={btnG}>✕</button>
+          </div>
+        </div>
+
+        {/* Results */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          {!q.trim() ? (
+            <div style={{ textAlign: "center", color: T.textLight, fontSize: 13, padding: 32 }}>
+              <div style={{ fontSize: 32, opacity: 0.3, marginBottom: 8 }}>⌕</div>
+              Type at least 2 characters to search.
+              <div style={{ fontSize: 11, marginTop: 8, fontStyle: "italic" }}>Searches trade notes, daily plans, weekly/monthly recaps</div>
+            </div>
+          ) : searching ? (
+            <div style={{ textAlign: "center", color: T.textLight, fontSize: 12, padding: 32 }}>Searching...</div>
+          ) : !results ? null : (
+            <>
+              {/* Trades section */}
+              {results.trades.length > 0 && (
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>Trades · {results.trades.length}</div>
+                  {results.trades.map(t => {
+                    const m = findMatchField(t, results.term, ["notes_technical", "notes_fundamental", "notes_mistakes", "tags", "trade_types", "pair"]);
+                    const fieldLabel = m ? { notes_technical: "Technical", notes_fundamental: "Fundamental", notes_mistakes: "Mistakes", tags: "Tags", trade_types: "Types", pair: "Pair" }[m.field] : "";
+                    return (
+                      <div key={t.id} onClick={() => { onOpenTrade(t); onClose(); }} style={{ background: T.cardAlt, border: `0.5px solid ${T.borderLight}`, borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 6 }}>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 10, color: T.purple, fontFamily: mono, fontWeight: 700, background: T.purpleBg, padding: "2px 6px", borderRadius: 3 }}>{fieldLabel}</span>
+                            <span style={{ fontSize: 11, fontFamily: mono, color: T.text, fontWeight: 600 }}>{t.date} · {t.pair} · {t.direction}</span>
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 700, fontFamily: mono, color: (parseFloat(t.pnl_pct) || 0) >= 0 ? T.green : T.red }}>
+                            {(parseFloat(t.pnl_pct) || 0) >= 0 ? "+" : "−"}{Math.abs(parseFloat(t.pnl_pct) || 0).toFixed(2)}%
+                          </span>
+                        </div>
+                        {m && <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.5 }}>{highlight(snippet(m.text, results.term), results.term)}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Plans section */}
+              {results.plans.length > 0 && (
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>Daily plans · {results.plans.length}</div>
+                  {results.plans.map(p => {
+                    const m = findMatchField(p, results.term, ["pre_fundamentals", "pre_technicals", "post_what_happened", "post_deviations"]);
+                    const fieldLabel = m ? { pre_fundamentals: "Pre · Fundamentals", pre_technicals: "Pre · Technicals", post_what_happened: "Post · What happened", post_deviations: "Post · Mistakes" }[m.field] : "";
+                    return (
+                      <div key={p.id} onClick={() => { onOpenDay(p.date); onClose(); }} style={{ background: T.cardAlt, border: `0.5px solid ${T.borderLight}`, borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 10, color: T.blue, fontFamily: mono, fontWeight: 700, background: T.blueBg, padding: "2px 6px", borderRadius: 3 }}>{fieldLabel}</span>
+                          <span style={{ fontSize: 11, fontFamily: mono, color: T.text, fontWeight: 600 }}>{p.date}</span>
+                        </div>
+                        {m && <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.5 }}>{highlight(snippet(m.text, results.term), results.term)}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Recaps section */}
+              {results.recaps.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>Recaps · {results.recaps.length}</div>
+                  {results.recaps.map(r => {
+                    const m = findMatchField(r, results.term, ["positives_text", "negatives_text", "worked_text", "didnt_work_text", "pattern_text", "change_text"]);
+                    return (
+                      <div key={r.id} onClick={() => { onOpenRecap(r); onClose(); }} style={{ background: T.cardAlt, border: `0.5px solid ${T.borderLight}`, borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 10, color: T.accent, fontFamily: mono, fontWeight: 700, background: T.accentBg, padding: "2px 6px", borderRadius: 3 }}>{(r.period_type || "").toUpperCase()}</span>
+                          <span style={{ fontSize: 11, fontFamily: mono, color: T.text, fontWeight: 600 }}>{r.period_date}</span>
+                        </div>
+                        {m && <div style={{ fontSize: 12, color: T.textMid, lineHeight: 1.5 }}>{highlight(snippet(m.text, results.term), results.term)}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {results.trades.length === 0 && results.plans.length === 0 && results.recaps.length === 0 && (
+                <div style={{ textAlign: "center", color: T.textLight, fontSize: 13, padding: 32 }}>
+                  No results for "<strong>{results.term}</strong>".
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+// ══════════════════════════════════════════
+// TRADE REPLAY MODAL — read-only review of a trade with full day context
+// ══════════════════════════════════════════
+function TradeReplayModal({ trade, user, activeAccount, allTrades, onClose, onEdit }) {
+  const [plan, setPlan] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!trade?.date || !activeAccount) return;
+    let cancelled = false;
+    setLoading(true);
+    supabase.from("daily_plans")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("account_id", activeAccount.id)
+      .eq("date", trade.date)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setPlan(data || null);
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [trade?.date, user.id, activeAccount?.id]);
+
+  if (!trade) return null;
+
+  const sameDayTrades = (allTrades || []).filter(t => t.date === trade.date && t.id !== trade.id);
+  const preF = (plan?.pre_fundamentals || "").trim();
+  const preT = (plan?.pre_technicals || "").trim();
+  const postW = (plan?.post_what_happened || "").trim();
+  const postM = (plan?.post_deviations || "").trim();
+  const hasPre = preF || preT;
+  const hasPost = postW || postM;
+
+  const dayLabel = parseLocalDate(trade.date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+  const fmtP = (n) => `${n >= 0 ? "+" : "−"}${Math.abs(parseFloat(n) || 0).toFixed(2)}%`;
+  const fmtU = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(parseFloat(n) || 0).toFixed(2)}`;
+  const pnlColor = (parseFloat(trade.pnl_pct) || 0) >= 0 ? T.green : T.red;
+
+  const sectionTitle = (color, label) => (
+    <div style={{ fontSize: 10, color, letterSpacing: 1.5, textTransform: "uppercase", fontWeight: 700, marginBottom: 8, fontFamily: font }}>{label}</div>
+  );
+  const textBlock = (text) => (
+    <div style={{ background: T.card, border: `0.5px solid ${T.borderLight}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, color: T.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{text}</div>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", ...center, zIndex: 1000, padding: 16 }}>
+      <div style={{ ...cardS, padding: 0, width: "100%", maxWidth: 880, maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Sticky header */}
+        <div style={{ padding: "16px 20px", borderBottom: `0.5px solid ${T.border}`, background: T.card }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>▶ Trade Replay</span>
+              <span style={{ fontSize: 11, color: T.textMid }}>{dayLabel}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { onEdit(trade); onClose(); }} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
+              <button onClick={onClose} style={btnG}>✕</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+
+          {/* TRADE SUMMARY */}
+          <div style={{ background: T.cardAlt, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                  <Pill text={trade.pair} type="pair" />
+                  <Pill text={trade.direction} />
+                  <Pill text={trade.result} />
+                  <span style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>{trade.session}</span>
+                </div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: pnlColor, letterSpacing: -0.8, lineHeight: 1 }}>{fmtP(trade.pnl_pct)}</div>
+                <div style={{ fontSize: 13, color: T.textMid, marginTop: 4, fontFamily: mono }}>{fmtU(trade.pnl_usd)}</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "4px 14px", fontSize: 11, fontFamily: mono, color: T.text }}>
+                <span style={{ color: T.textLight }}>Risk:</span><span>{trade.risk}%</span>
+                <span style={{ color: T.textLight }}>Entry:</span><span>{trade.entry || "—"}</span>
+                <span style={{ color: T.textLight }}>Exit:</span><span>{trade.exit || "—"}</span>
+                <span style={{ color: T.textLight }}>R:R:</span><span>{trade.rr || "—"}</span>
+                {trade.result === "Win" && (<><span style={{ color: T.textLight }}>Max R:</span><span>{trade.max_r || "—"}</span></>)}
+              </div>
+            </div>
+            {(trade.trade_types || "").trim() && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 10 }}>
+                {(trade.trade_types || "").split(",").map(s => s.trim()).filter(Boolean).map(tt => (
+                  <span key={tt} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: T.purpleBg, color: T.purple, fontWeight: 600 }}>{tt}</span>
+                ))}
+              </div>
+            )}
+            {(trade.tags || "").trim() && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                {(trade.tags || "").split(",").map(s => s.trim()).filter(Boolean).map(tag => (
+                  <span key={tag} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: T.accentBg, color: T.accent, fontFamily: mono, fontWeight: 600 }}>#{tag}</span>
+                ))}
+              </div>
+            )}
+            {(trade.exec_link || trade.bias_link) && (
+              <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                {trade.exec_link && <a href={trade.exec_link} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: T.blue, fontFamily: mono }}>↗ Exec link</a>}
+                {trade.bias_link && <a href={trade.bias_link} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: T.blue, fontFamily: mono }}>↗ Bias link</a>}
+              </div>
+            )}
+          </div>
+
+          {/* TWO COLUMNS: Trade Notes | Day Plan */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+
+            {/* LEFT: Trade Notes */}
+            <div>
+              <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderTop: `3px solid ${T.accent}`, borderRadius: 12, padding: 16 }}>
+                <div style={{ fontSize: 11, color: T.accent, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 12 }}>◆ Trade Notes</div>
+                {trade.notes_technical && (
+                  <div style={{ marginBottom: 12 }}>
+                    {sectionTitle(T.textMid, "Technical")}
+                    {textBlock(trade.notes_technical)}
+                  </div>
+                )}
+                {trade.notes_fundamental && (
+                  <div style={{ marginBottom: 12 }}>
+                    {sectionTitle(T.textMid, "Fundamental")}
+                    {textBlock(trade.notes_fundamental)}
+                  </div>
+                )}
+                {trade.notes_mistakes && (
+                  <div>
+                    {sectionTitle(T.red, "Mistakes")}
+                    {textBlock(trade.notes_mistakes)}
+                  </div>
+                )}
+                {!trade.notes_technical && !trade.notes_fundamental && !trade.notes_mistakes && (
+                  <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic" }}>No trade notes.</div>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT: Day Plan */}
+            <div>
+              <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderTop: `3px solid ${T.blue}`, borderRadius: 12, padding: 16 }}>
+                <div style={{ fontSize: 11, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 12 }}>◧ Day Plan & Review</div>
+                {loading ? <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic" }}>Loading plan...</div>
+                  : (!hasPre && !hasPost) ? <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic" }}>No plan written for this day.</div>
+                  : (
+                    <>
+                      {preF && (<div style={{ marginBottom: 12 }}>{sectionTitle(T.blue, "Pre · Fundamentals")}{textBlock(preF)}</div>)}
+                      {preT && (<div style={{ marginBottom: 12 }}>{sectionTitle(T.blue, "Pre · Technicals")}{textBlock(preT)}</div>)}
+                      {postW && (<div style={{ marginBottom: 12 }}>{sectionTitle(T.purple, "Post · What happened")}{textBlock(postW)}</div>)}
+                      {postM && (<div>{sectionTitle(T.purple, "Post · Mistakes")}{textBlock(postM)}</div>)}
+                    </>
+                  )}
+              </div>
+            </div>
+          </div>
+
+          {/* SAME-DAY TRADES */}
+          {sameDayTrades.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 8 }}>Other trades that day · {sameDayTrades.length}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {sameDayTrades.map(t => (
+                  <div key={t.id} style={{ background: T.cardAlt, border: `0.5px solid ${T.borderLight}`, borderRadius: 8, padding: "8px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <Pill text={t.pair} type="pair" />
+                    <Pill text={t.direction} />
+                    <Pill text={t.result} />
+                    <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{t.session}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, fontFamily: mono, color: (parseFloat(t.pnl_pct) || 0) >= 0 ? T.green : T.red }}>{fmtP(t.pnl_pct)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ══════════════════════════════════════════
 // DAY CONTEXT BLOCK — read-only embed of that day's plan, shown inside the Trade Form.
 // Lets you see your pre-trade plan & post-trade review while you log a trade.
 // ══════════════════════════════════════════
@@ -588,7 +1030,7 @@ function DayContextBlock({ user, activeAccount, dateISO }) {
 // DAILY PLAN PAGE — single-page journal
 // Fundamentals + Technicals · Yes/No trade toggle · (when Yes) trade list + new trade + What happened + Mistakes
 // ══════════════════════════════════════════
-function DailyPlanPage({ user, activeAccount, accountTrades, onNewTrade, onEditTrade }) {
+function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTrade, onEditTrade }) {
   const [viewDate, setViewDate] = useState(new Date());
   const viewDateISO = isoDate(viewDate);
   const todayISO = isoDate(new Date());
@@ -801,6 +1243,9 @@ function DailyPlanPage({ user, activeAccount, accountTrades, onNewTrade, onEditT
         </div>
       </div>
 
+      {/* RISK GAUGES — self-monitoring totals */}
+      {riskGauges && <RiskGauges gauges={riskGauges} />}
+
       {/* PAST PLANS LIST (collapsible) */}
       {showPastList && (
         <div style={{ ...cardS, padding: 14 }}>
@@ -989,6 +1434,268 @@ const DEFAULT_DISCIPLINE_FIELDS = [
   { key: "confident", label: "Confident" },
   { key: "tactical", label: "Tactical" },
 ];
+
+// ══════════════════════════════════════════
+// YEAR PAGE — 12 mini calendars + year stats + yearly recap
+// ══════════════════════════════════════════
+function YearPage({ user, activeAccount, accountTrades }) {
+  const [viewYear, setViewYear] = useState(new Date().getFullYear());
+  const [recap, setRecap] = useState("");
+  const [recapId, setRecapId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  // Load yearly recap
+  useEffect(() => {
+    if (!activeAccount) return;
+    const load = async () => {
+      const { data } = await supabase.from("yearly_recaps")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("account_id", activeAccount.id)
+        .eq("year", viewYear)
+        .maybeSingle();
+      if (data) { setRecap(data.recap_text || ""); setRecapId(data.id); }
+      else { setRecap(""); setRecapId(null); }
+      setDirty(false);
+    };
+    load();
+  }, [user.id, activeAccount?.id, viewYear]);
+
+  const save = async () => {
+    if (!activeAccount) return;
+    setSaving(true);
+    const payload = {
+      user_id: user.id, account_id: activeAccount.id, year: viewYear,
+      recap_text: recap, updated_at: new Date().toISOString(),
+    };
+    let res;
+    if (recapId) res = await supabase.from("yearly_recaps").update(payload).eq("id", recapId).select().single();
+    else res = await supabase.from("yearly_recaps").insert(payload).select().single();
+    setSaving(false);
+    if (res.error) { alert("Save failed: " + res.error.message); return; }
+    setRecapId(res.data.id);
+    setDirty(false);
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 1500);
+  };
+
+  // Filter trades for the year
+  const yearTrades = useMemo(() =>
+    (accountTrades || []).filter(t => t.date && t.date.startsWith(String(viewYear))),
+    [accountTrades, viewYear]);
+
+  // Year stats
+  const yearStats = useMemo(() => {
+    if (yearTrades.length === 0) return null;
+    const wins = yearTrades.filter(t => t.result === "Win").length;
+    const losses = yearTrades.filter(t => t.result === "Loss").length;
+    const be = yearTrades.filter(t => t.result === "Breakeven").length;
+    const pnl = yearTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+    const usd = yearTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+    const wr = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
+    // Best and worst month
+    const byMonth = {};
+    yearTrades.forEach(t => {
+      const m = t.date.slice(0, 7);
+      if (!byMonth[m]) byMonth[m] = 0;
+      byMonth[m] += parseFloat(t.pnl_pct) || 0;
+    });
+    const monthEntries = Object.entries(byMonth);
+    const bestMonth = monthEntries.length > 0 ? monthEntries.reduce((a, b) => b[1] > a[1] ? b : a) : null;
+    const worstMonth = monthEntries.length > 0 ? monthEntries.reduce((a, b) => b[1] < a[1] ? b : a) : null;
+    // Trading days
+    const tradingDays = new Set(yearTrades.map(t => t.date)).size;
+    return { n: yearTrades.length, wins, losses, be, pnl, usd, wr, bestMonth, worstMonth, tradingDays };
+  }, [yearTrades]);
+
+  // Build day-level PnL map for the year
+  const dayPnLMap = useMemo(() => {
+    const map = {};
+    yearTrades.forEach(t => {
+      if (!map[t.date]) map[t.date] = 0;
+      map[t.date] += parseFloat(t.pnl_pct) || 0;
+    });
+    return map;
+  }, [yearTrades]);
+
+  // Find max abs PnL for intensity scaling
+  const maxAbsPnL = useMemo(() => {
+    const values = Object.values(dayPnLMap).map(Math.abs);
+    return values.length > 0 ? Math.max(...values) : 1;
+  }, [dayPnLMap]);
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const currentYear = new Date().getFullYear();
+  const isCurrentYear = viewYear === currentYear;
+  const todayISO = isoDate(new Date());
+
+  // Render mini-calendar for a month
+  const renderMiniMonth = (monthIdx) => {
+    const firstDay = new Date(viewYear, monthIdx, 1);
+    const lastDay = new Date(viewYear, monthIdx + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDayOfWeek = firstDay.getDay(); // 0 = Sunday
+    const cells = [];
+    // Blanks before first day
+    for (let i = 0; i < startDayOfWeek; i++) cells.push(null);
+    // Days
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateISO = isoDate(new Date(viewYear, monthIdx, d, 12, 0, 0, 0));
+      cells.push({ day: d, dateISO, pnl: dayPnLMap[dateISO] });
+    }
+    // Calculate month total
+    let monthPnL = 0;
+    cells.forEach(c => { if (c && c.pnl) monthPnL += c.pnl; });
+    return (
+      <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 10, padding: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.text }}>{monthNames[monthIdx]}</span>
+          {monthPnL !== 0 && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: monthPnL >= 0 ? T.green : T.red, fontFamily: mono }}>
+              {monthPnL >= 0 ? "+" : "−"}{Math.abs(monthPnL).toFixed(1)}%
+            </span>
+          )}
+        </div>
+        {/* Weekday header */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 2 }}>
+          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+            <div key={i} style={{ textAlign: "center", fontSize: 8, color: T.textLight, fontFamily: mono, fontWeight: 600 }}>{d}</div>
+          ))}
+        </div>
+        {/* Day grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+          {cells.map((c, i) => {
+            if (!c) return <div key={i} style={{ aspectRatio: "1", background: "transparent" }} />;
+            const hasTrades = c.pnl !== undefined && c.pnl !== 0;
+            const isToday = c.dateISO === todayISO;
+            let bg = T.cardAlt;
+            let textColor = T.textLight;
+            if (hasTrades) {
+              const intensity = Math.min(1, Math.abs(c.pnl) / maxAbsPnL);
+              const baseAlpha = 0.25 + intensity * 0.55;
+              if (c.pnl > 0) {
+                bg = `rgba(31, 122, 72, ${baseAlpha})`;
+                textColor = intensity > 0.5 ? "#fff" : T.green;
+              } else {
+                bg = `rgba(183, 58, 44, ${baseAlpha})`;
+                textColor = intensity > 0.5 ? "#fff" : T.red;
+              }
+            }
+            return (
+              <div key={i} title={hasTrades ? `${c.dateISO}: ${c.pnl >= 0 ? "+" : ""}${c.pnl.toFixed(2)}%` : c.dateISO} style={{
+                aspectRatio: "1",
+                background: bg,
+                borderRadius: 3,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: hasTrades ? 700 : 500, fontFamily: mono,
+                color: textColor,
+                border: isToday ? `1.5px solid ${T.accent}` : "none",
+              }}>{c.day}</div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* HEADER */}
+      <div style={{ ...cardS, padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => setViewYear(y => y - 1)} style={{ ...btnG, padding: "6px 12px" }}>← {viewYear - 1}</button>
+            <span style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, padding: "0 12px", minWidth: 80, textAlign: "center" }}>{viewYear}</span>
+            <button onClick={() => setViewYear(y => y + 1)} disabled={viewYear >= currentYear} style={{ ...btnG, padding: "6px 12px", opacity: viewYear >= currentYear ? 0.4 : 1 }}>{viewYear + 1} →</button>
+            <button onClick={() => setViewYear(currentYear)} disabled={isCurrentYear} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: isCurrentYear ? T.textLight : T.accent, borderColor: isCurrentYear ? T.border : T.accent + "60", marginLeft: 4 }}>THIS YEAR</button>
+          </div>
+          <span style={{ fontSize: 12, color: T.textMid, fontFamily: mono }}>{yearTrades.length} {yearTrades.length === 1 ? "trade" : "trades"} in {viewYear}</span>
+        </div>
+      </div>
+
+      {/* YEAR STATS */}
+      {yearStats && (
+        <div style={{ ...cardS, padding: 18 }}>
+          <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 14 }}>Year overview · {viewYear}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Total PnL %</div>
+              <div style={{ fontSize: 22, color: yearStats.pnl >= 0 ? T.green : T.red, fontWeight: 700, letterSpacing: -0.5 }}>{yearStats.pnl >= 0 ? "+" : "−"}{Math.abs(yearStats.pnl).toFixed(2)}%</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Total PnL $</div>
+              <div style={{ fontSize: 22, color: yearStats.usd >= 0 ? T.green : T.red, fontWeight: 700, letterSpacing: -0.5 }}>{yearStats.usd >= 0 ? "+" : "−"}${Math.abs(yearStats.usd).toFixed(0)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Trades</div>
+              <div style={{ fontSize: 22, color: T.text, fontWeight: 700 }}>{yearStats.n}</div>
+              <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{yearStats.tradingDays} trading days</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Win rate</div>
+              <div style={{ fontSize: 22, color: yearStats.wr >= 50 ? T.green : T.red, fontWeight: 700 }}>{yearStats.wr.toFixed(0)}%</div>
+              <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{yearStats.wins}W · {yearStats.losses}L{yearStats.be > 0 ? ` · ${yearStats.be}BE` : ""}</div>
+            </div>
+            {yearStats.bestMonth && (
+              <div>
+                <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Best month</div>
+                <div style={{ fontSize: 16, color: T.green, fontWeight: 700 }}>+{yearStats.bestMonth[1].toFixed(1)}%</div>
+                <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{monthNames[parseInt(yearStats.bestMonth[0].slice(5)) - 1]}</div>
+              </div>
+            )}
+            {yearStats.worstMonth && (
+              <div>
+                <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Worst month</div>
+                <div style={{ fontSize: 16, color: T.red, fontWeight: 700 }}>{yearStats.worstMonth[1].toFixed(1)}%</div>
+                <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{monthNames[parseInt(yearStats.worstMonth[0].slice(5)) - 1]}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 12 MINI-MONTH GRID */}
+      <div style={{ ...cardS, padding: 18 }}>
+        <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 14 }}>Year at a glance · {viewYear}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+          {monthNames.map((_, i) => <div key={i}>{renderMiniMonth(i)}</div>)}
+        </div>
+      </div>
+
+      {/* YEARLY RECAP */}
+      <div style={{ ...cardS, padding: 22, borderTop: `3px solid ${T.purple}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <span style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Yearly Recap · {viewYear}</span>
+            <div style={{ fontSize: 11, color: T.textLight, fontStyle: "italic", marginTop: 2 }}>Sit down end-of-year. What worked. What didn't. What changes next year.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {dirty && <span style={{ fontSize: 11, color: T.amber, fontStyle: "italic" }}>unsaved</span>}
+            <button onClick={save} disabled={saving} style={{ ...btnP, padding: "8px 18px", fontSize: 12, opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>
+              {saving ? "Saving..." : justSaved ? "✓ Saved" : (recapId ? "Update" : "Save recap")}
+            </button>
+          </div>
+        </div>
+        <textarea
+          value={recap}
+          onChange={e => { setRecap(e.target.value); setDirty(true); }}
+          onBlur={() => { if (dirty) save(); }}
+          placeholder="Looking back at the year: biggest wins, biggest losses, what I learned about myself, what setups worked, what didn't, what I'm changing next year..."
+          style={{
+            width: "100%", minHeight: 280, padding: "14px 16px",
+            border: `0.5px solid ${T.border}`, borderRadius: 10,
+            background: T.card, color: T.text, fontFamily: font, fontSize: 14, lineHeight: 1.65,
+            resize: "vertical", outline: "none", boxSizing: "border-box",
+          }}
+        />
+      </div>
+
+    </div>
+  );
+}
 
 function DisciplineFieldsModal({ fields, onClose, onAdd, onUpdate, onDelete }) {
   const [newLabel, setNewLabel] = useState("");
@@ -1787,6 +2494,8 @@ function Journal({ user, onLogout }) {
   const [groupBy, setGroupBy] = useState("none"); // none | week | month
   const [calMonth, setCalMonth] = useState(new Date()); // month displayed on dashboard calendar
   const [dayModal, setDayModal] = useState(null); // { dateISO, trades } or null
+  const [replayTrade, setReplayTrade] = useState(null);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   const [exportingHTML, setExportingHTML] = useState(false);
 
   useEffect(() => {
@@ -2181,6 +2890,26 @@ function downloadJSON() {
     }
   };
 
+  // Risk running totals — separate lightweight memo so it's available even with 0 trades and on every tab
+  const riskGauges = useMemo(() => {
+    if (!activeAccount) return null;
+    const todayISO = isoDate(new Date());
+    const today = new Date();
+    const sowISO = isoDate(startOfWeek(today));
+    const eowISO = isoDate(endOfWeek(today));
+    const somISO = isoDate(startOfMonth(today));
+    const eomISO = isoDate(endOfMonth(today));
+    const compute = (list) => {
+      const pnl = list.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+      const usd = list.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+      return { pnl, usd, n: list.length };
+    };
+    const td = compute(trades.filter(t => t.date === todayISO));
+    const wk = compute(trades.filter(t => t.date >= sowISO && t.date <= eowISO));
+    const mo = compute(trades.filter(t => t.date >= somISO && t.date <= eomISO));
+    return { td, wk, mo };
+  }, [trades, activeAccount]);
+
   const S = useMemo(() => {
     if (!activeAccount || !trades.length) return null;
     const base = activeAccount.starting_balance;
@@ -2355,6 +3084,7 @@ function downloadJSON() {
     { k: "log", l: "Trade Log", i: "☰" },
     { k: "pairs", l: "Pairs", i: "⟡" },
     { k: "monthly", l: "Monthly", i: "▣" },
+    { k: "year", l: "Year", i: "◰" },
     { k: "recap", l: "Daily", i: "📋" },
     { k: "discipline", l: "Discipline", i: "✓" },
   ];
@@ -2384,6 +3114,7 @@ function downloadJSON() {
         <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "12px 0", flexWrap: "wrap" }}>
           {page === "journal" && activeAccount && (
             <>
+              <button onClick={() => setShowSearchModal(true)} title="Search trades, plans, recaps (⌘K)" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⌕ Search</button>
               <button onClick={() => setShowPairsModal(true)} title="Manage Pairs" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⟡ Pairs ({pairs.length})</button>
               <button onClick={() => setShowTradeTypesModal(true)} title="Manage Trade Types" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⊞ Types ({tradeTypes.length})</button>
               <button onClick={() => setShowAccountModal(true)} style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
@@ -2400,6 +3131,15 @@ function downloadJSON() {
       {showAccountModal && <AccountModal accounts={accounts} activeId={activeAccount?.id} onClose={() => activeAccount && setShowAccountModal(false)} onCreate={createAccount} onDelete={deleteAccount} onSelect={selectAccount} />}
       {showPairsModal && <PairsModal pairs={pairs} onClose={() => setShowPairsModal(false)} onAdd={addPair} onUpdate={updatePair} onDelete={deletePair} onResetDefaults={resetPairsToDefaults} />}
       {showTradeTypesModal && <TradeTypesModal types={tradeTypes} onClose={() => setShowTradeTypesModal(false)} onAdd={addTradeType} onUpdate={updateTradeType} onDelete={deleteTradeType} />}
+      {replayTrade && <TradeReplayModal trade={replayTrade} user={user} activeAccount={activeAccount} allTrades={trades} onClose={() => setReplayTrade(null)} onEdit={(t) => { setReplayTrade(null); editTrade(t); setTab("log"); }} />}
+      {showSearchModal && <GlobalSearchModal
+        user={user}
+        activeAccount={activeAccount}
+        onClose={() => setShowSearchModal(false)}
+        onOpenTrade={(t) => setReplayTrade(t)}
+        onOpenDay={(dateISO) => { setTab("recap"); setDailySubTab("daily"); }}
+        onOpenRecap={(r) => { setTab("recap"); setDailySubTab(r.period_type === "monthly" ? "monthly" : "weekly"); }}
+      />}
       {dayModal && (
         <div onClick={() => setDayModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 20 }}>
           <div onClick={e => e.stopPropagation()} style={{ ...cardS, width: "100%", maxWidth: 900, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
@@ -2432,6 +3172,7 @@ function downloadJSON() {
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       <span style={{ fontSize: 14, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
                       <span style={{ fontSize: 12, fontFamily: mono, color: cP(t.pnl_usd) }}>{fU(t.pnl_usd)}</span>
+                      <button onClick={() => { setDayModal(null); setReplayTrade(t); }} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.purple, borderColor: T.purple + "60" }}>▶ Replay</button>
                       <button onClick={() => { setDayModal(null); editTrade(t); setTab("log"); }} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
                     </div>
                   </div>
@@ -3064,6 +3805,11 @@ function downloadJSON() {
                   <button onClick={() => { setShowForm(false); setEditId(null); }} style={btnG}>✕</button>
                 </div>
 
+                {/* RISK GAUGES — compact running totals shown before logging a trade */}
+                <div style={{ marginBottom: 14 }}>
+                  <RiskGauges gauges={riskGauges} compact />
+                </div>
+
                 {/* DAY CONTEXT — read-only embed of the daily plan for this trade's date */}
                 <DayContextBlock user={user} activeAccount={activeAccount} dateISO={form.date} />
 
@@ -3280,6 +4026,7 @@ function downloadJSON() {
                                   {t.bias_link && <a href={t.bias_link} target="_blank" rel="noreferrer" style={{ color: T.purple, fontSize: 9, textDecoration: "none", fontWeight: 600 }}>Bias</a>}
                                 </td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>
+                                  <button onClick={() => setReplayTrade(t)} title="Replay" style={{ background: "none", border: "none", cursor: "pointer", color: T.purple, fontSize: 12, padding: "2px", marginRight: 4 }}>▶</button>
                                   <button onClick={() => editTrade(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.amber, fontSize: 12, padding: "2px" }}>✎</button>
                                   <button onClick={() => deleteTrade(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 12, padding: "2px" }}>✕</button>
                                 </td>
@@ -3730,6 +4477,7 @@ function downloadJSON() {
                   user={user}
                   activeAccount={activeAccount}
                   accountTrades={trades}
+                  riskGauges={riskGauges}
                   onNewTrade={(dateISO) => { setForm({ ...emptyTrade(), date: dateISO }); setEditId(null); setShowForm(true); }}
                   onEditTrade={(t) => { editTrade(t); }}
                 />}
@@ -3737,6 +4485,8 @@ function downloadJSON() {
                 {dailySubTab === "monthly" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} lockedPeriodType="month" />}
               </div>
             )}
+
+            {tab === "year" && <YearPage user={user} activeAccount={activeAccount} accountTrades={trades} />}
 
             {tab === "discipline" && <DisciplinePage user={user} />}
 
