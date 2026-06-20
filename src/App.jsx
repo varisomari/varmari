@@ -2735,12 +2735,31 @@ function Journal({ user, onLogout }) {
       trade_types: form.trade_types || "",
     };
     if (editId) {
-      const { data, error } = await supabase.from("trades").update(payload).eq("id", editId).select().single();
-      if (error) { alert("Error: " + error.message); return; }
+      let { data, error } = await supabase.from("trades").update(payload).eq("id", editId).select().single();
+      // If column doesn't exist (user hasn't run new SQL), drop the new cols and retry
+      if (error && /column .* does not exist/i.test(error.message || "")) {
+        const fallback = { ...payload };
+        delete fallback.notes_trade; delete fallback.notes_market; delete fallback.max_adverse_r;
+        // Keep old field names so legacy schema still saves something
+        fallback.notes_technical = form.notes_trade || "";
+        fallback.notes_fundamental = "";
+        const r2 = await supabase.from("trades").update(fallback).eq("id", editId).select().single();
+        data = r2.data; error = r2.error;
+      }
+      if (error) { alert("Update failed: " + (error.message || JSON.stringify(error)) + "\n\nIf this mentions a column, you need to run the new SQL migration in Supabase first."); return; }
+      if (!data) { alert("Update returned no data — the trade may have been deleted, or you don't have permission."); return; }
       setTrades(p => p.map(x => x.id === editId ? data : x));
     } else {
-      const { data, error } = await supabase.from("trades").insert(payload).select().single();
-      if (error) { alert("Error: " + error.message); return; }
+      let { data, error } = await supabase.from("trades").insert(payload).select().single();
+      if (error && /column .* does not exist/i.test(error.message || "")) {
+        const fallback = { ...payload };
+        delete fallback.notes_trade; delete fallback.notes_market; delete fallback.max_adverse_r;
+        fallback.notes_technical = form.notes_trade || "";
+        fallback.notes_fundamental = "";
+        const r2 = await supabase.from("trades").insert(fallback).select().single();
+        data = r2.data; error = r2.error;
+      }
+      if (error) { alert("Save failed: " + (error.message || JSON.stringify(error)) + "\n\nIf this mentions a column, you need to run the new SQL migration in Supabase first."); return; }
       setTrades(p => [data, ...p]);
     }
     setForm(emptyTrade()); setShowForm(false); setEditId(null);
@@ -4169,10 +4188,9 @@ function downloadJSON() {
                       <Field label="Execution Link"><input type="url" value={form.exec_link} onChange={e => setForm({ ...form, exec_link: e.target.value })} placeholder="https://tradingview.com/..." style={inputS} /></Field>
                       <Field label="Bias Link"><input type="url" value={form.bias_link} onChange={e => setForm({ ...form, bias_link: e.target.value })} placeholder="https://..." style={inputS} /></Field>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12, marginTop: 12 }}>
-                      <Field label="Trade Notes"><textarea value={form.notes_trade} onChange={e => setForm({ ...form, notes_trade: e.target.value })} rows={7} placeholder="Why I took the trade: setup, levels, technical + fundamental thesis, entry trigger..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 160 }} /></Field>
-                      <Field label="What Happened to the Market"><textarea value={form.notes_market} onChange={e => setForm({ ...form, notes_market: e.target.value })} rows={7} placeholder="How the market actually played out: did it reach my targets, reversed at key levels, news caused move..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 160 }} /></Field>
-                      <Field label="Mistakes"><textarea value={form.notes_mistakes} onChange={e => setForm({ ...form, notes_mistakes: e.target.value })} rows={7} placeholder="What went wrong, what to improve, deviations from plan..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 160 }} /></Field>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 12, marginTop: 12 }}>
+                      <Field label="Trade Notes — Setup, Thesis, What Happened"><textarea value={form.notes_trade} onChange={e => setForm({ ...form, notes_trade: e.target.value })} rows={10} placeholder="Why I took the trade (setup, levels, technical + fundamental thesis, entry trigger) AND how the market actually played out (targets hit, reversed at key levels, news moves...)" style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 240 }} /></Field>
+                      <Field label="Mistakes"><textarea value={form.notes_mistakes} onChange={e => setForm({ ...form, notes_mistakes: e.target.value })} rows={10} placeholder="What went wrong, what to improve, deviations from plan..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 240 }} /></Field>
                     </div>
                     <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                       <button onClick={saveTrade} style={btnP}>{editId ? "Update" : "Save Trade"}</button>
