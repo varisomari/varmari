@@ -996,13 +996,11 @@ function TradeReplayModal({ trade, user, activeAccount, allTrades, onClose, onEd
                 ))}
               </div>
             )}
-            {String(trade.max_adverse_r || "").trim() && (
+            {trade.result === "Loss" && String(trade.max_adverse_r || "").trim() && (
               <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 6 }}>
-                <span style={{ color: T.textLight }}>{trade.result === "Loss" ? "Max R against: " : "Max Adverse: "}</span>
-                <span style={{ color: T.amber, fontWeight: 700 }}>−{trade.max_adverse_r}R</span>
-                <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>
-                  {trade.result === "Loss" ? "how far it went past my stop" : "went against me before working"}
-                </span>
+                <span style={{ color: T.textLight }}>Max R Reversed: </span>
+                <span style={{ color: T.red, fontWeight: 700 }}>−{trade.max_adverse_r}R</span>
+                <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>past my stop</span>
               </div>
             )}
             {(trade.exec_link || trade.bias_link) && (
@@ -1492,7 +1490,7 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
                   <span style={{ color: cP(dayStats.pnl), fontWeight: 700 }}>{fP(dayStats.pnl)}</span>
                 </div>
               )}
-              <button onClick={() => { onNewTrade(viewDateISO); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ ...btnP, padding: "6px 12px", fontSize: 11 }}>+ Trade</button>
+              <button onClick={() => { onNewTrade(viewDateISO); }} style={{ ...btnP, padding: "6px 12px", fontSize: 11 }}>+ Trade</button>
             </div>
           </div>
 
@@ -1513,7 +1511,7 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
                   <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <span style={{ fontSize: 12, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
                     <span style={{ fontSize: 10, fontFamily: mono, color: cP(t.pnl_usd) }}>{fU(t.pnl_usd)}</span>
-                    <button onClick={() => { onEditTrade(t); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ background: "none", border: "none", color: T.amber, fontSize: 11, padding: "2px 4px", cursor: "pointer" }}>✎</button>
+                    <button onClick={() => { onEditTrade(t); }} style={{ background: "none", border: "none", color: T.amber, fontSize: 11, padding: "2px 4px", cursor: "pointer" }}>✎</button>
                   </div>
                 </div>
               ))}
@@ -3380,14 +3378,12 @@ function downloadJSON() {
                       ))}
                     </div>
                   )}
-                  {/* Max Adverse R */}
-                  {String(t.max_adverse_r || "").trim() && (
+                  {/* Max R Reversed — losses only */}
+                  {t.result === "Loss" && String(t.max_adverse_r || "").trim() && (
                     <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 8 }}>
-                      <span style={{ color: T.textLight }}>{t.result === "Loss" ? "Max R against: " : "Max Adverse: "}</span>
-                      <span style={{ color: T.amber, fontWeight: 700 }}>−{t.max_adverse_r}R</span>
-                      <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>
-                        {t.result === "Loss" ? "past my stop" : "before working"}
-                      </span>
+                      <span style={{ color: T.textLight }}>Max R Reversed: </span>
+                      <span style={{ color: T.red, fontWeight: 700 }}>−{t.max_adverse_r}R</span>
+                      <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>past my stop</span>
                     </div>
                   )}
                   {/* Notes — new structure with old-field fallback */}
@@ -4053,63 +4049,66 @@ function downloadJSON() {
                     );
                   })()}
 
-                  {/* ADVERSE R ANALYSIS — luck on wins + how wrong on losses */}
-                  {S.adverseStats && (() => {
-                    const a = S.adverseStats;
-                    const winLuckColor = a.avgWinAdverse == null ? T.textMid : a.avgWinAdverse < 0.3 ? T.green : a.avgWinAdverse < 0.6 ? T.amber : T.red;
-                    const lossBiasColor = a.avgLossAdverse == null ? T.textMid : a.avgLossAdverse <= 1.1 ? T.green : a.avgLossAdverse <= 1.5 ? T.amber : T.red;
-                    const luckyPct = a.winsN > 0 ? (a.luckyWins / a.winsN) * 100 : 0;
-                    const veryWrongPct = a.lossesN > 0 ? (a.veryWrongLosses / a.lossesN) * 100 : 0;
+                  {/* RIGHT vs WRONG — how far wins went past close, how far losses went past stop */}
+                  {(() => {
+                    // Compute on the fly so it follows the dashboard period filter
+                    const _t = dashboardPeriod === "all" ? trades : (S ? null : trades);
+                    // Use already-filtered trades from S if available; otherwise compute
+                    const winsWithMaxR = (S ? trades : trades).filter(t => t.result === "Win" && t.max_r != null && String(t.max_r).trim() !== "");
+                    const lossesWithRev = (S ? trades : trades).filter(t => t.result === "Loss" && t.max_adverse_r != null && String(t.max_adverse_r).trim() !== "");
+                    // Filter to dashboard period
+                    const inPeriod = (t) => {
+                      if (dashboardPeriod === "all") return true;
+                      const now = new Date();
+                      if (dashboardPeriod === "year") return t.date.startsWith(String(now.getFullYear()));
+                      if (dashboardPeriod === "month") { const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`; return t.date.startsWith(ym); }
+                      if (dashboardPeriod === "week") { const sow = isoDate(startOfWeek(now)); const eow = isoDate(endOfWeek(now)); return t.date >= sow && t.date <= eow; }
+                      return true;
+                    };
+                    const wins = winsWithMaxR.filter(inPeriod);
+                    const losses = lossesWithRev.filter(inPeriod);
+                    if (wins.length === 0 && losses.length === 0) return null;
+
+                    const winRs = wins.map(t => parseRR(t.max_r)).filter(v => v != null && !isNaN(v));
+                    const lossRs = losses.map(t => parseFloat(t.max_adverse_r)).filter(v => !isNaN(v));
+                    const avgWin = winRs.length > 0 ? winRs.reduce((s, v) => s + v, 0) / winRs.length : null;
+                    const maxWin = winRs.length > 0 ? Math.max(...winRs) : null;
+                    const avgLoss = lossRs.length > 0 ? lossRs.reduce((s, v) => s + v, 0) / lossRs.length : null;
+                    const maxLoss = lossRs.length > 0 ? Math.max(...lossRs) : null;
+
                     return (
                       <div style={{ ...cardS, padding: 18 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Adverse R · Lucky Wins & Bias Quality</span>
-                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>How close I came to wrong / how wrong I was</span>
+                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Right vs Wrong · R Excursion</span>
+                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>How far wins went · how far losses went</span>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                          {/* WINS — how lucky */}
-                          {a.avgWinAdverse != null && (
-                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${winLuckColor}`, borderRadius: 10, padding: 14 }}>
-                              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>On Wins · How Lucky</div>
-                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-                                <div style={{ fontSize: 24, fontWeight: 700, color: winLuckColor, fontFamily: mono, lineHeight: 1.1 }}>−{a.avgWinAdverse.toFixed(2)}R</div>
-                                <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>avg adverse</div>
+                          {/* WINS — how far the trade went past close (max_r) */}
+                          {avgWin != null && (
+                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.green}`, borderRadius: 10, padding: 14 }}>
+                              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>On Wins · How Right</div>
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+                                <div style={{ fontSize: 28, fontWeight: 700, color: T.green, fontFamily: mono, lineHeight: 1.1 }}>+{avgWin.toFixed(2)}R</div>
+                                <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>avg max R</div>
                               </div>
-                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 8 }}>
-                                Max went: <strong style={{ color: T.text }}>{a.maxWinAdverse != null ? `−${a.maxWinAdverse.toFixed(2)}R` : "—"}</strong> · {a.winsN}/{a.totalWins} wins logged
-                              </div>
-                              <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, padding: "6px 8px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                                {a.avgWinAdverse < 0.3
-                                  ? <><strong style={{ color: T.green }}>Clean entries.</strong> Your wins barely went against you — good timing.</>
-                                  : a.avgWinAdverse < 0.6
-                                  ? <><strong style={{ color: T.amber }}>Decent.</strong> Some wins threatened your stop. Sharpen entries.</>
-                                  : <><strong style={{ color: T.red }}>You're getting lucky.</strong> {luckyPct.toFixed(0)}% of wins ({a.luckyWins}/{a.winsN}) almost stopped out first. One day they won't reverse.</>}
+                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>
+                                Best: <strong style={{ color: T.green }}>+{maxWin.toFixed(2)}R</strong> · {wins.length} {wins.length === 1 ? "win" : "wins"} logged
                               </div>
                             </div>
                           )}
-                          {/* LOSSES — how wrong */}
-                          {a.avgLossAdverse != null && (
-                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${lossBiasColor}`, borderRadius: 10, padding: 14 }}>
+                          {/* LOSSES — how far the trade went past stop (max_adverse_r) */}
+                          {avgLoss != null && (
+                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.red}`, borderRadius: 10, padding: 14 }}>
                               <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>On Losses · How Wrong</div>
-                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-                                <div style={{ fontSize: 24, fontWeight: 700, color: lossBiasColor, fontFamily: mono, lineHeight: 1.1 }}>−{a.avgLossAdverse.toFixed(2)}R</div>
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+                                <div style={{ fontSize: 28, fontWeight: 700, color: T.red, fontFamily: mono, lineHeight: 1.1 }}>−{avgLoss.toFixed(2)}R</div>
                                 <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>avg past stop</div>
                               </div>
-                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 8 }}>
-                                Worst went: <strong style={{ color: T.text }}>{a.maxLossAdverse != null ? `−${a.maxLossAdverse.toFixed(2)}R` : "—"}</strong> · {a.lossesN}/{a.totalLosses} losses logged
-                              </div>
-                              <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, padding: "6px 8px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                                {a.avgLossAdverse <= 1.1
-                                  ? <><strong style={{ color: T.green }}>Clean stops.</strong> Losses stop at the stop — your levels are right.</>
-                                  : a.avgLossAdverse <= 1.5
-                                  ? <><strong style={{ color: T.amber }}>Stops barely held.</strong> Trades went a bit further past your stop on average.</>
-                                  : <><strong style={{ color: T.red }}>Bias was wrong.</strong> {veryWrongPct.toFixed(0)}% of losses ({a.veryWrongLosses}/{a.lossesN}) went 1.5R+ past your stop. Wrong direction entirely, not just bad timing.</>}
+                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>
+                                Worst: <strong style={{ color: T.red }}>−{maxLoss.toFixed(2)}R</strong> · {losses.length} {losses.length === 1 ? "loss" : "losses"} logged
                               </div>
                             </div>
                           )}
-                        </div>
-                        <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 12, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                          <strong style={{ color: T.amber }}>Read:</strong> Adverse R on wins {"<"} 0.5 = your entries are sharp. Adverse R on losses {">"} 1.5 = your bias was completely backwards, not just timing. Fill in <strong>Max R Against</strong> on every trade for this to matter.
                         </div>
                       </div>
                     );
@@ -4191,9 +4190,10 @@ function downloadJSON() {
               </div>
             )}
 
-            {/* TRADE FORM — rendered across all tabs when active. Allows Daily page to open it inline. */}
+            {/* TRADE FORM — modal popup, rendered above all tabs */}
             {showForm && (
-              <div style={{ ...cardS, padding: 22, marginBottom: 14 }}>
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 16, overflowY: "auto", alignItems: "flex-start" }}>
+                <div style={{ ...cardS, padding: 22, marginTop: 24, marginBottom: 24, maxWidth: 1100, width: "100%", maxHeight: "calc(100vh - 48px)", overflowY: "auto" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
                   <span style={{ fontSize: 15, fontWeight: 700 }}>{editId ? "Edit Trade" : "Log New Trade"}</span>
                   <button onClick={() => { setShowForm(false); setEditId(null); }} style={btnG}>✕</button>
@@ -4271,9 +4271,11 @@ function downloadJSON() {
                       {form.result === "Win" && (
                         <Field label="Max R Reached"><input type="text" value={form.max_r} onChange={e => setForm({ ...form, max_r: e.target.value })} placeholder="1:5 or 4" style={inputS} /></Field>
                       )}
-                      <Field label={form.result === "Loss" ? "Max R Against (how far past stop)" : "Max Adverse R (peak against me)"}><input type="text" value={form.max_adverse_r} onChange={e => setForm({ ...form, max_adverse_r: e.target.value })} placeholder={form.result === "Loss" ? "5 = trade went 5R against me past my stop" : "0.6 = went 0.6R against me before working"} style={inputS} /></Field>
+                      {form.result === "Loss" && (
+                        <Field label="Max R Reversed"><input type="text" value={form.max_adverse_r} onChange={e => setForm({ ...form, max_adverse_r: e.target.value })} placeholder="3 = went 3R past my stop" style={inputS} /></Field>
+                      )}
                       <Field label="PnL %"><input type="number" step="0.01" value={form.pnl_pct} onChange={e => setForm({ ...form, pnl_pct: e.target.value })} style={inputS} /></Field>
-                      <Field label="Result"><select value={form.result} onChange={e => { const newResult = e.target.value; setForm({ ...form, result: newResult, max_r: newResult === "Win" ? form.max_r : "" }); }} style={selectS}><option>Win</option><option>Loss</option><option>Breakeven</option></select></Field>
+                      <Field label="Result"><select value={form.result} onChange={e => { const newResult = e.target.value; setForm({ ...form, result: newResult, max_r: newResult === "Win" ? form.max_r : "", max_adverse_r: newResult === "Loss" ? form.max_adverse_r : "" }); }} style={selectS}><option>Win</option><option>Loss</option><option>Breakeven</option></select></Field>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 12 }}>
                       <Field label="Execution Link"><input type="url" value={form.exec_link} onChange={e => setForm({ ...form, exec_link: e.target.value })} placeholder="https://tradingview.com/..." style={inputS} /></Field>
@@ -4287,6 +4289,7 @@ function downloadJSON() {
                       <button onClick={saveTrade} style={btnP}>{editId ? "Update" : "Save Trade"}</button>
                       <button onClick={() => { setShowForm(false); setEditId(null); }} style={btnG}>Cancel</button>
                     </div>
+              </div>
               </div>
             )}
 
@@ -4316,7 +4319,7 @@ function downloadJSON() {
                 <div style={{ ...cardS, overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono }}>
                     <thead><tr style={{ background: T.cardAlt }}>
-                      {[{ k: "date", l: "Date" }, { k: "day", l: "Day" }, { k: "session", l: "Session" }, { k: "pair", l: "Pair" }, { k: "direction", l: "Dir" }, { k: "risk", l: "Risk" }, { k: "entry", l: "Entry" }, { k: "exit", l: "Exit" }, { k: "rr", l: "R:R" }, { k: "max_r", l: "Max R" }, { k: "max_adverse_r", l: "Adv R" }, { k: "pnl_pct", l: "PnL" }, { k: "result", l: "Result" }].map(c => (
+                      {[{ k: "date", l: "Date" }, { k: "day", l: "Day" }, { k: "session", l: "Session" }, { k: "pair", l: "Pair" }, { k: "direction", l: "Dir" }, { k: "risk", l: "Risk" }, { k: "entry", l: "Entry" }, { k: "exit", l: "Exit" }, { k: "rr", l: "R:R" }, { k: "max_r", l: "Max R" }, { k: "max_adverse_r", l: "Rev R" }, { k: "pnl_pct", l: "PnL" }, { k: "result", l: "Result" }].map(c => (
                         <th key={c.k} onClick={() => toggleSort(c.k)} style={{ textAlign: "left", padding: "10px 7px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", borderBottom: `1px solid ${T.border}`, fontFamily: mono }}>{c.l}{sortCol === c.k ? (sortDir === "asc" ? " ↑" : " ↓") : ""}</th>
                       ))}
                       <th style={{ padding: "10px 7px", color: T.textLight, fontSize: 9, borderBottom: `1px solid ${T.border}`, fontFamily: mono }}>LINKS</th>
@@ -4411,19 +4414,10 @@ function downloadJSON() {
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: t.result === "Win" && t.max_r ? T.green : T.textLight }}>{t.result === "Win" ? (t.max_r || "—") : "—"}</td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>
                                   {(() => {
+                                    if (t.result !== "Loss") return <span style={{ color: T.textLight }}>—</span>;
                                     const v = parseFloat(t.max_adverse_r);
                                     if (isNaN(v) || String(t.max_adverse_r || "").trim() === "") return <span style={{ color: T.textLight }}>—</span>;
-                                    // Color by sentiment: lower adverse = better
-                                    // On wins: low = clean entry. On losses: 1.0 = clean stop, > 1.5 = wrong bias
-                                    let color;
-                                    if (t.result === "Win") {
-                                      color = v < 0.3 ? T.green : v < 0.6 ? T.amber : T.red;
-                                    } else if (t.result === "Loss") {
-                                      color = v <= 1.1 ? T.green : v <= 1.5 ? T.amber : T.red;
-                                    } else {
-                                      color = T.textMid;
-                                    }
-                                    return <span style={{ color, fontWeight: 600 }}>−{v.toFixed(2)}R</span>;
+                                    return <span style={{ color: T.red, fontWeight: 600 }}>−{v.toFixed(2)}R</span>;
                                   })()}
                                 </td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600 }}>
