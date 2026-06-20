@@ -4049,14 +4049,9 @@ function downloadJSON() {
                     );
                   })()}
 
-                  {/* RIGHT vs WRONG — how far wins went past close, how far losses went past stop */}
+                  {/* R-DISTRIBUTION TABLE — how often each R-multiple shows up, side by side wins/losses */}
                   {(() => {
-                    // Compute on the fly so it follows the dashboard period filter
-                    const _t = dashboardPeriod === "all" ? trades : (S ? null : trades);
-                    // Use already-filtered trades from S if available; otherwise compute
-                    const winsWithMaxR = (S ? trades : trades).filter(t => t.result === "Win" && t.max_r != null && String(t.max_r).trim() !== "");
-                    const lossesWithRev = (S ? trades : trades).filter(t => t.result === "Loss" && t.max_adverse_r != null && String(t.max_adverse_r).trim() !== "");
-                    // Filter to dashboard period
+                    // Period filter
                     const inPeriod = (t) => {
                       if (dashboardPeriod === "all") return true;
                       const now = new Date();
@@ -4065,126 +4060,132 @@ function downloadJSON() {
                       if (dashboardPeriod === "week") { const sow = isoDate(startOfWeek(now)); const eow = isoDate(endOfWeek(now)); return t.date >= sow && t.date <= eow; }
                       return true;
                     };
-                    const wins = winsWithMaxR.filter(inPeriod);
-                    const losses = lossesWithRev.filter(inPeriod);
+
+                    // Collect win Max R values + loss Max R Reversed values
+                    const wins = trades.filter(t => inPeriod(t) && t.result === "Win" && t.max_r != null && String(t.max_r).trim() !== "")
+                      .map(t => ({ id: t.id, v: parseRR(t.max_r) }))
+                      .filter(x => x.v != null && !isNaN(x.v) && x.v >= 0);
+                    const losses = trades.filter(t => inPeriod(t) && t.result === "Loss" && t.max_adverse_r != null && String(t.max_adverse_r).trim() !== "")
+                      .map(t => ({ id: t.id, v: parseFloat(t.max_adverse_r) }))
+                      .filter(x => !isNaN(x.v) && x.v >= 0);
+
                     if (wins.length === 0 && losses.length === 0) return null;
 
-                    const winRs = wins.map(t => parseRR(t.max_r)).filter(v => v != null && !isNaN(v));
-                    const lossRs = losses.map(t => parseFloat(t.max_adverse_r)).filter(v => !isNaN(v));
-                    const avgWin = winRs.length > 0 ? winRs.reduce((s, v) => s + v, 0) / winRs.length : null;
-                    const maxWin = winRs.length > 0 ? Math.max(...winRs) : null;
-                    const avgLoss = lossRs.length > 0 ? lossRs.reduce((s, v) => s + v, 0) / lossRs.length : null;
-                    const maxLoss = lossRs.length > 0 ? Math.max(...lossRs) : null;
+                    // 1R buckets, infinite tail. Find max R reached in data so we know how many rows to render.
+                    const allMaxRs = [...wins.map(w => w.v), ...losses.map(l => l.v)];
+                    const topBucket = Math.max(1, Math.ceil(Math.max(...allMaxRs, 1)));
+                    // Bucket index: floor(v) — 1.7 → bucket 1 (1-2R), 2.0 → bucket 2 (2-3R)
+                    const winBuckets = new Array(topBucket).fill(0);
+                    const lossBuckets = new Array(topBucket).fill(0);
+                    wins.forEach(w => { const b = Math.min(Math.floor(w.v), topBucket - 1); winBuckets[b]++; });
+                    losses.forEach(l => { const b = Math.min(Math.floor(l.v), topBucket - 1); lossBuckets[b]++; });
+
+                    const maxBarCount = Math.max(1, ...winBuckets, ...lossBuckets);
+
+                    const winAvg = wins.length > 0 ? wins.reduce((s, w) => s + w.v, 0) / wins.length : 0;
+                    const lossAvg = losses.length > 0 ? losses.reduce((s, l) => s + l.v, 0) / losses.length : 0;
+                    const winMax = wins.length > 0 ? Math.max(...wins.map(w => w.v)) : 0;
+                    const lossMax = losses.length > 0 ? Math.max(...losses.map(l => l.v)) : 0;
+
+                    // Render rows top-down: highest bucket first
+                    const bucketRows = [];
+                    for (let i = topBucket - 1; i >= 0; i--) {
+                      bucketRows.push({ idx: i, winCount: winBuckets[i], lossCount: lossBuckets[i], label: `${i}-${i+1}R` });
+                    }
+
+                    const barCell = (count, color) => {
+                      if (count === 0) return <div style={{ height: 20, opacity: 0.3, fontSize: 11, color: T.textLight, fontFamily: mono, textAlign: "center" }}>—</div>;
+                      const pct = (count / maxBarCount) * 100;
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, height: 20 }}>
+                          <div style={{
+                            height: 14, width: `${pct}%`,
+                            background: color, borderRadius: 3,
+                            minWidth: 4, transition: "width 200ms",
+                          }} />
+                          <span style={{ fontSize: 11, fontFamily: mono, color: T.text, fontWeight: 700, minWidth: 18 }}>{count}</span>
+                        </div>
+                      );
+                    };
 
                     return (
                       <div style={{ ...cardS, padding: 18 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Right vs Wrong · R Excursion</span>
-                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>How far wins went · how far losses went</span>
+                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>R-Distribution · Wins vs Losses</span>
+                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>How many trades landed in each R-bucket</span>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                          {/* WINS — how far the trade went past close (max_r) */}
-                          {avgWin != null && (
-                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.green}`, borderRadius: 10, padding: 14 }}>
-                              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>On Wins · How Right</div>
-                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
-                                <div style={{ fontSize: 28, fontWeight: 700, color: T.green, fontFamily: mono, lineHeight: 1.1 }}>+{avgWin.toFixed(2)}R</div>
-                                <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>avg max R</div>
+
+                        {/* Header row */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 1fr", gap: 12, marginBottom: 8, alignItems: "center" }}>
+                          <div style={{ textAlign: "right", fontSize: 10, color: T.green, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>Wins · Max R Reached</div>
+                          <div style={{ textAlign: "center", fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>Bucket</div>
+                          <div style={{ textAlign: "left", fontSize: 10, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>Losses · Max R Reversed</div>
+                        </div>
+
+                        {/* Rows */}
+                        <div style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                          {bucketRows.map(row => (
+                            <div key={row.idx} style={{
+                              display: "grid", gridTemplateColumns: "1fr 100px 1fr", gap: 12, padding: "8px 0",
+                              alignItems: "center", borderBottom: `1px solid ${T.borderLight}`,
+                            }}>
+                              {/* Wins bar — right-aligned (bar grows leftward visually) */}
+                              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                                <div style={{ width: "100%", maxWidth: 280, display: "flex", justifyContent: "flex-end" }}>
+                                  {row.winCount === 0 ? (
+                                    <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono, opacity: 0.4 }}>—</div>
+                                  ) : (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <span style={{ fontSize: 11, fontFamily: mono, color: T.text, fontWeight: 700, minWidth: 18, textAlign: "right" }}>{row.winCount}</span>
+                                      <div style={{
+                                        height: 14, width: `${(row.winCount / maxBarCount) * 240}px`,
+                                        background: T.green, borderRadius: 3,
+                                        minWidth: 4,
+                                      }} />
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>
-                                Best: <strong style={{ color: T.green }}>+{maxWin.toFixed(2)}R</strong> · {wins.length} {wins.length === 1 ? "win" : "wins"} logged
+                              {/* Center label */}
+                              <div style={{ textAlign: "center", fontSize: 12, fontFamily: mono, fontWeight: 700, color: T.text, padding: "0 8px", background: T.cardAlt, borderRadius: 4, lineHeight: "22px" }}>
+                                {row.label}
+                              </div>
+                              {/* Losses bar — left-aligned */}
+                              <div style={{ display: "flex" }}>
+                                <div style={{ width: "100%", maxWidth: 280 }}>
+                                  {barCell(row.lossCount, T.red)}
+                                </div>
                               </div>
                             </div>
-                          )}
-                          {/* LOSSES — how far the trade went past stop (max_adverse_r) */}
-                          {avgLoss != null && (
-                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.red}`, borderRadius: 10, padding: 14 }}>
-                              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>On Losses · How Wrong</div>
-                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
-                                <div style={{ fontSize: 28, fontWeight: 700, color: T.red, fontFamily: mono, lineHeight: 1.1 }}>−{avgLoss.toFixed(2)}R</div>
-                                <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>avg past stop</div>
-                              </div>
-                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>
-                                Worst: <strong style={{ color: T.red }}>−{maxLoss.toFixed(2)}R</strong> · {losses.length} {losses.length === 1 ? "loss" : "losses"} logged
-                              </div>
+                          ))}
+                        </div>
+
+                        {/* Summary row */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 1fr", gap: 12, marginTop: 12, padding: "10px 0", background: T.cardAlt, borderRadius: 8 }}>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", marginBottom: 2 }}>Wins</div>
+                            <div style={{ fontSize: 14, color: T.green, fontWeight: 700, fontFamily: mono }}>
+                              avg <span style={{ fontSize: 16 }}>+{winAvg.toFixed(2)}R</span>
                             </div>
-                          )}
+                            <div style={{ fontSize: 10, color: T.textMid, fontFamily: mono, marginTop: 2 }}>
+                              best +{winMax.toFixed(2)}R · {wins.length} {wins.length === 1 ? "trade" : "trades"}
+                            </div>
+                          </div>
+                          <div></div>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", marginBottom: 2 }}>Losses</div>
+                            <div style={{ fontSize: 14, color: T.red, fontWeight: 700, fontFamily: mono }}>
+                              avg <span style={{ fontSize: 16 }}>−{lossAvg.toFixed(2)}R</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: T.textMid, fontFamily: mono, marginTop: 2 }}>
+                              worst −{lossMax.toFixed(2)}R · {losses.length} {losses.length === 1 ? "trade" : "trades"}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
                   })()}
 
-                  {/* TILT DETECTION + PRESSED WINNERS — The two retail killers */}
-                  {(S.tilt || S.pressed) && (
-                    <div style={{ ...cardS, padding: 18 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Behavior Patterns · The Two Retail Killers</span>
-                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Revenge trading & cutting winners early</span>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
-
-                        {/* TILT */}
-                        {S.tilt && (() => {
-                          const wrDelta = S.tilt.wr - S.wr;
-                          const isTilted = wrDelta < -10; // 10pp lower than baseline = tilt signal
-                          const color = isTilted ? T.red : wrDelta < -5 ? T.amber : T.green;
-                          return (
-                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 14 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                                <span style={{ fontSize: 14 }}>🔥</span>
-                                <span style={{ fontSize: 11, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, fontWeight: 700 }}>Tilt Check · Trade After a Loss</span>
-                              </div>
-                              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-                                <div style={{ fontSize: 24, fontWeight: 700, color, fontFamily: mono, lineHeight: 1 }}>{S.tilt.wr != null ? `${S.tilt.wr.toFixed(0)}%` : "—"}</div>
-                                <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>WR · vs {S.wr.toFixed(0)}% baseline</div>
-                              </div>
-                              <div style={{ fontSize: 11, fontFamily: mono, color: T.textMid, marginBottom: 8 }}>
-                                {S.tilt.n} trades · <span style={{ color: T.green }}>{S.tilt.w}W</span> · <span style={{ color: T.red }}>{S.tilt.l}L</span> · <span style={{ color: cP(S.tilt.pnl), fontWeight: 600 }}>{fP(S.tilt.pnl)}</span>
-                              </div>
-                              <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, padding: "6px 8px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                                {isTilted ? <><strong style={{ color: T.red }}>⚠ Tilted.</strong> Post-loss trades underperform by {Math.abs(wrDelta).toFixed(0)}pp. Consider a "1-loss pause" rule.</>
-                                  : wrDelta < -5 ? <><strong style={{ color: T.amber }}>Caution.</strong> Slightly worse after losses ({wrDelta.toFixed(0)}pp). Watch this metric.</>
-                                  : <><strong style={{ color: T.green }}>Healthy.</strong> No tilt signal — you handle losses well.</>}
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        {/* PRESSED WINNERS */}
-                        {S.pressed && (() => {
-                          const p = S.pressed;
-                          const color = p.pressedPct >= 50 ? T.green : p.pressedPct >= 30 ? T.amber : T.red;
-                          return (
-                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 14 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                                <span style={{ fontSize: 14 }}>🎯</span>
-                                <span style={{ fontSize: 11, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontFamily: mono, fontWeight: 700 }}>Pressed Winners · Held to ≥80% of MFE</span>
-                              </div>
-                              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-                                <div style={{ fontSize: 24, fontWeight: 700, color, fontFamily: mono, lineHeight: 1 }}>{p.pressedPct.toFixed(0)}%</div>
-                                <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono }}>of winners held strong</div>
-                              </div>
-                              <div style={{ fontSize: 11, fontFamily: mono, color: T.textMid, marginBottom: 8 }}>
-                                <span style={{ color: T.green }}>{p.pressedHard} pressed</span> · <span style={{ color: T.amber }}>{p.pressedSoft} partial</span> · <span style={{ color: T.red }}>{p.cutEarly} cut early</span> · {p.n} logged
-                              </div>
-                              <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, padding: "6px 8px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                                {p.pressedPct < 30 ? <><strong style={{ color: T.red }}>⚠ Cutting too early.</strong> Most winners exit before MFE. Small wins + big losses = no edge.</>
-                                  : p.pressedPct < 50 ? <><strong style={{ color: T.amber }}>Mixed.</strong> Some pressed, many cut. Try letting one runner per day go further.</>
-                                  : <><strong style={{ color: T.green }}>Pressing well.</strong> You're capturing most of the move when you're right.</>}
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                      </div>
-                      {(!S.tilt || !S.pressed) && (
-                        <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, fontStyle: "italic", textAlign: "center" }}>
-                          {!S.tilt && "Tilt check needs 5+ post-loss trades. "}
-                          {!S.pressed && "Pressed winners needs 5+ wins with Max R filled in."}
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                 </>)}
               </div>
