@@ -4049,9 +4049,8 @@ function downloadJSON() {
                     );
                   })()}
 
-                  {/* R-DISTRIBUTION TABLE — how often each R-multiple shows up, side by side wins/losses */}
+                  {/* R-DISTRIBUTION TABLE — exact R values, count of trades that hit each */}
                   {(() => {
-                    // Period filter
                     const inPeriod = (t) => {
                       if (dashboardPeriod === "all") return true;
                       const now = new Date();
@@ -4061,125 +4060,92 @@ function downloadJSON() {
                       return true;
                     };
 
-                    // Collect win Max R values + loss Max R Reversed values
                     const wins = trades.filter(t => inPeriod(t) && t.result === "Win" && t.max_r != null && String(t.max_r).trim() !== "")
-                      .map(t => ({ id: t.id, v: parseRR(t.max_r) }))
-                      .filter(x => x.v != null && !isNaN(x.v) && x.v >= 0);
+                      .map(t => parseRR(t.max_r))
+                      .filter(v => v != null && !isNaN(v) && v >= 0);
                     const losses = trades.filter(t => inPeriod(t) && t.result === "Loss" && t.max_adverse_r != null && String(t.max_adverse_r).trim() !== "")
-                      .map(t => ({ id: t.id, v: parseFloat(t.max_adverse_r) }))
-                      .filter(x => !isNaN(x.v) && x.v >= 0);
+                      .map(t => parseFloat(t.max_adverse_r))
+                      .filter(v => !isNaN(v) && v >= 0);
 
                     if (wins.length === 0 && losses.length === 0) return null;
 
-                    // 1R buckets, infinite tail. Find max R reached in data so we know how many rows to render.
-                    const allMaxRs = [...wins.map(w => w.v), ...losses.map(l => l.v)];
-                    const topBucket = Math.max(1, Math.ceil(Math.max(...allMaxRs, 1)));
-                    // Bucket index: floor(v) — 1.7 → bucket 1 (1-2R), 2.0 → bucket 2 (2-3R)
-                    const winBuckets = new Array(topBucket).fill(0);
-                    const lossBuckets = new Array(topBucket).fill(0);
-                    wins.forEach(w => { const b = Math.min(Math.floor(w.v), topBucket - 1); winBuckets[b]++; });
-                    losses.forEach(l => { const b = Math.min(Math.floor(l.v), topBucket - 1); lossBuckets[b]++; });
+                    // Count exact R values — each unique R value becomes one row
+                    const winCounts = {};
+                    wins.forEach(v => { winCounts[v] = (winCounts[v] || 0) + 1; });
+                    const lossCounts = {};
+                    losses.forEach(v => { lossCounts[v] = (lossCounts[v] || 0) + 1; });
 
-                    const maxBarCount = Math.max(1, ...winBuckets, ...lossBuckets);
+                    // Sorted unique R values, highest at top
+                    const winRows = Object.keys(winCounts).map(k => ({ r: parseFloat(k), count: winCounts[k] })).sort((a, b) => b.r - a.r);
+                    const lossRows = Object.keys(lossCounts).map(k => ({ r: parseFloat(k), count: lossCounts[k] })).sort((a, b) => b.r - a.r);
+                    const maxBar = Math.max(1, ...winRows.map(r => r.count), ...lossRows.map(r => r.count));
 
-                    const winAvg = wins.length > 0 ? wins.reduce((s, w) => s + w.v, 0) / wins.length : 0;
-                    const lossAvg = losses.length > 0 ? losses.reduce((s, l) => s + l.v, 0) / losses.length : 0;
-                    const winMax = wins.length > 0 ? Math.max(...wins.map(w => w.v)) : 0;
-                    const lossMax = losses.length > 0 ? Math.max(...losses.map(l => l.v)) : 0;
+                    const winAvg = wins.length > 0 ? wins.reduce((s, v) => s + v, 0) / wins.length : 0;
+                    const lossAvg = losses.length > 0 ? losses.reduce((s, v) => s + v, 0) / losses.length : 0;
+                    const winMax = wins.length > 0 ? Math.max(...wins) : 0;
+                    const lossMax = losses.length > 0 ? Math.max(...losses) : 0;
 
-                    // Render rows top-down: highest bucket first
-                    const bucketRows = [];
-                    for (let i = topBucket - 1; i >= 0; i--) {
-                      bucketRows.push({ idx: i, winCount: winBuckets[i], lossCount: lossBuckets[i], label: `${i}-${i+1}R` });
-                    }
-
-                    const barCell = (count, color) => {
-                      if (count === 0) return <div style={{ height: 20, opacity: 0.3, fontSize: 11, color: T.textLight, fontFamily: mono, textAlign: "center" }}>—</div>;
-                      const pct = (count / maxBarCount) * 100;
-                      return (
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, height: 20 }}>
-                          <div style={{
-                            height: 14, width: `${pct}%`,
-                            background: color, borderRadius: 3,
-                            minWidth: 4, transition: "width 200ms",
-                          }} />
-                          <span style={{ fontSize: 11, fontFamily: mono, color: T.text, fontWeight: 700, minWidth: 18 }}>{count}</span>
-                        </div>
-                      );
-                    };
+                    const fmtR = (v) => Number.isInteger(v) ? `${v}R` : `${v.toFixed(2).replace(/\.?0+$/, "")}R`;
 
                     return (
                       <div style={{ ...cardS, padding: 18 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
                           <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>R-Distribution · Wins vs Losses</span>
-                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>How many trades landed in each R-bucket</span>
+                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>How many trades hit each exact R-value</span>
                         </div>
 
-                        {/* Header row */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 1fr", gap: 12, marginBottom: 8, alignItems: "center" }}>
-                          <div style={{ textAlign: "right", fontSize: 10, color: T.green, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>Wins · Max R Reached</div>
-                          <div style={{ textAlign: "center", fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>Bucket</div>
-                          <div style={{ textAlign: "left", fontSize: 10, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700 }}>Losses · Max R Reversed</div>
-                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
 
-                        {/* Rows */}
-                        <div style={{ borderTop: `1px solid ${T.borderLight}` }}>
-                          {bucketRows.map(row => (
-                            <div key={row.idx} style={{
-                              display: "grid", gridTemplateColumns: "1fr 100px 1fr", gap: 12, padding: "8px 0",
-                              alignItems: "center", borderBottom: `1px solid ${T.borderLight}`,
-                            }}>
-                              {/* Wins bar — right-aligned (bar grows leftward visually) */}
-                              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                <div style={{ width: "100%", maxWidth: 280, display: "flex", justifyContent: "flex-end" }}>
-                                  {row.winCount === 0 ? (
-                                    <div style={{ fontSize: 11, color: T.textLight, fontFamily: mono, opacity: 0.4 }}>—</div>
-                                  ) : (
-                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                      <span style={{ fontSize: 11, fontFamily: mono, color: T.text, fontWeight: 700, minWidth: 18, textAlign: "right" }}>{row.winCount}</span>
-                                      <div style={{
-                                        height: 14, width: `${(row.winCount / maxBarCount) * 240}px`,
-                                        background: T.green, borderRadius: 3,
-                                        minWidth: 4,
-                                      }} />
-                                    </div>
-                                  )}
+                          {/* WINS COLUMN */}
+                          <div>
+                            <div style={{ fontSize: 10, color: T.green, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.borderLight}` }}>
+                              Wins · Max R Reached
+                            </div>
+                            {winRows.length === 0 ? (
+                              <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic", padding: 12 }}>No wins logged with Max R.</div>
+                            ) : (
+                              winRows.map(row => (
+                                <div key={row.r} style={{ display: "grid", gridTemplateColumns: "60px 1fr 40px", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.borderLight}` }}>
+                                  <span style={{ fontSize: 13, fontFamily: mono, color: T.green, fontWeight: 700, textAlign: "right" }}>+{fmtR(row.r)}</span>
+                                  <div style={{
+                                    height: 16, width: `${(row.count / maxBar) * 100}%`,
+                                    background: T.green, borderRadius: 3, minWidth: 4,
+                                  }} />
+                                  <span style={{ fontSize: 12, fontFamily: mono, color: T.text, fontWeight: 700 }}>{row.count} {row.count === 1 ? "trade" : "trades"}</span>
                                 </div>
+                              ))
+                            )}
+                            {winRows.length > 0 && (
+                              <div style={{ marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, fontSize: 11, fontFamily: mono, color: T.textMid }}>
+                                avg <strong style={{ color: T.green }}>+{winAvg.toFixed(2)}R</strong> · best <strong style={{ color: T.green }}>+{winMax.toFixed(2)}R</strong> · {wins.length} {wins.length === 1 ? "win" : "wins"}
                               </div>
-                              {/* Center label */}
-                              <div style={{ textAlign: "center", fontSize: 12, fontFamily: mono, fontWeight: 700, color: T.text, padding: "0 8px", background: T.cardAlt, borderRadius: 4, lineHeight: "22px" }}>
-                                {row.label}
-                              </div>
-                              {/* Losses bar — left-aligned */}
-                              <div style={{ display: "flex" }}>
-                                <div style={{ width: "100%", maxWidth: 280 }}>
-                                  {barCell(row.lossCount, T.red)}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Summary row */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 1fr", gap: 12, marginTop: 12, padding: "10px 0", background: T.cardAlt, borderRadius: 8 }}>
-                          <div style={{ textAlign: "center" }}>
-                            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", marginBottom: 2 }}>Wins</div>
-                            <div style={{ fontSize: 14, color: T.green, fontWeight: 700, fontFamily: mono }}>
-                              avg <span style={{ fontSize: 16 }}>+{winAvg.toFixed(2)}R</span>
-                            </div>
-                            <div style={{ fontSize: 10, color: T.textMid, fontFamily: mono, marginTop: 2 }}>
-                              best +{winMax.toFixed(2)}R · {wins.length} {wins.length === 1 ? "trade" : "trades"}
-                            </div>
+                            )}
                           </div>
-                          <div></div>
-                          <div style={{ textAlign: "center" }}>
-                            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", marginBottom: 2 }}>Losses</div>
-                            <div style={{ fontSize: 14, color: T.red, fontWeight: 700, fontFamily: mono }}>
-                              avg <span style={{ fontSize: 16 }}>−{lossAvg.toFixed(2)}R</span>
+
+                          {/* LOSSES COLUMN */}
+                          <div>
+                            <div style={{ fontSize: 10, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.borderLight}` }}>
+                              Losses · Max R Reversed
                             </div>
-                            <div style={{ fontSize: 10, color: T.textMid, fontFamily: mono, marginTop: 2 }}>
-                              worst −{lossMax.toFixed(2)}R · {losses.length} {losses.length === 1 ? "trade" : "trades"}
-                            </div>
+                            {lossRows.length === 0 ? (
+                              <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic", padding: 12 }}>No losses logged with Max R Reversed.</div>
+                            ) : (
+                              lossRows.map(row => (
+                                <div key={row.r} style={{ display: "grid", gridTemplateColumns: "60px 1fr 40px", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.borderLight}` }}>
+                                  <span style={{ fontSize: 13, fontFamily: mono, color: T.red, fontWeight: 700, textAlign: "right" }}>−{fmtR(row.r)}</span>
+                                  <div style={{
+                                    height: 16, width: `${(row.count / maxBar) * 100}%`,
+                                    background: T.red, borderRadius: 3, minWidth: 4,
+                                  }} />
+                                  <span style={{ fontSize: 12, fontFamily: mono, color: T.text, fontWeight: 700 }}>{row.count} {row.count === 1 ? "trade" : "trades"}</span>
+                                </div>
+                              ))
+                            )}
+                            {lossRows.length > 0 && (
+                              <div style={{ marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, fontSize: 11, fontFamily: mono, color: T.textMid }}>
+                                avg <strong style={{ color: T.red }}>−{lossAvg.toFixed(2)}R</strong> · worst <strong style={{ color: T.red }}>−{lossMax.toFixed(2)}R</strong> · {losses.length} {losses.length === 1 ? "loss" : "losses"}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
