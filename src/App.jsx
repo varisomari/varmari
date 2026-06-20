@@ -109,6 +109,149 @@ const formatPeriodLabel = (type, startISO) => {
   return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 };
 
+// PDF Export — opens a new window with print-styled A4 layout for a given day.
+// Used by both DailyPlanPage (already has plan/trades in state) and TradeLog (fetches fresh).
+async function exportDailyPDF({ user, activeAccount, dateISO, dayTrades, plan }) {
+  // If plan/dayTrades not provided, fetch from Supabase
+  let p = plan;
+  let trades = dayTrades;
+  if (!p) {
+    const { data } = await supabase.from("daily_plans").select("*").eq("user_id", user.id).eq("account_id", activeAccount.id).eq("date", dateISO).maybeSingle();
+    p = data || {};
+  }
+  if (!trades) {
+    const { data } = await supabase.from("trades").select("*").eq("account_id", activeAccount.id).eq("date", dateISO).order("created_at", { ascending: true });
+    trades = data || [];
+  }
+  const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
+  const d = parseLocalDate(dateISO);
+  const dateStr = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+  const tradeStats = trades.length > 0 ? {
+    n: trades.length,
+    w: trades.filter(t => t.result === "Win").length,
+    l: trades.filter(t => t.result === "Loss").length,
+    pnlPct: trades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0),
+    pnlUsd: trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0),
+  } : null;
+
+  const tradesHTML = trades.map(t => {
+    const pnlPct = parseFloat(t.pnl_pct) || 0;
+    const pnlUsd = parseFloat(t.pnl_usd) || 0;
+    const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
+    return `<tr>
+      <td class="mono">${esc(t.session)}</td>
+      <td class="mono"><strong>${esc(t.pair)}</strong></td>
+      <td><span class="pill pill-${t.direction === "Long" ? "long" : "short"}">${esc(t.direction)}</span></td>
+      <td><span class="pill pill-${(t.result || "").toLowerCase()}">${esc(t.result)}</span></td>
+      <td class="mono">${esc(t.entry || "—")}</td>
+      <td class="mono">${esc(t.exit || "—")}</td>
+      <td class="mono">${esc(t.rr || "—")}R</td>
+      <td class="mono pnl ${pnlPct >= 0 ? "pos" : "neg"}">${pnlPct >= 0 ? "+" : "−"}${Math.abs(pnlPct).toFixed(2)}%</td>
+      <td class="mono pnl ${pnlUsd >= 0 ? "pos" : "neg"}">${pnlUsd >= 0 ? "+" : "−"}$${Math.abs(pnlUsd).toFixed(0)}</td>
+      <td class="types">${types.map(tt => `<span class="type-pill">${esc(tt)}</span>`).join("")}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Varmari Daily · ${esc(dateISO)}</title>
+<style>
+  @page { size: A4; margin: 12mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Helvetica, sans-serif; color: #2C2418; margin: 0; padding: 0; line-height: 1.45; font-size: 10.5pt; }
+  .page { max-width: 186mm; margin: 0 auto; }
+  .header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; border-bottom: 2px solid #C97140; margin-bottom: 10px; }
+  .header h1 { font-size: 16pt; margin: 0; font-weight: 700; }
+  .header .date { font-size: 10pt; color: #6B5D4F; font-family: 'Courier New', monospace; }
+  .section { margin-bottom: 9px; page-break-inside: avoid; }
+  .section-title { font-size: 8pt; letter-spacing: 1.5px; text-transform: uppercase; color: #C97140; margin: 0 0 4px 0; font-weight: 700; }
+  .section-body { font-size: 9.5pt; white-space: pre-wrap; padding: 6px 8px; background: #FAF8F4; border-left: 3px solid #E8E0D4; border-radius: 2px; line-height: 1.5; }
+  .pre-block { border-left-color: #2563EB; }
+  .post-block { border-left-color: #7C3AED; }
+  .mistakes-block { border-left-color: #B73A2C; background: #FDF0EF; }
+  .empty { color: #9C8E7E; font-style: italic; font-size: 9pt; }
+  table.trades { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-top: 4px; }
+  table.trades th { text-align: left; padding: 4px 5px; background: #FAF8F4; border-bottom: 1px solid #E8E0D4; font-weight: 700; color: #6B5D4F; text-transform: uppercase; font-size: 7.5pt; letter-spacing: 0.5px; }
+  table.trades td { padding: 4px 5px; border-bottom: 1px solid #F0E8DA; }
+  .mono { font-family: 'Courier New', monospace; }
+  .pill { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 7.5pt; font-weight: 700; font-family: 'Courier New', monospace; }
+  .pill-long, .pill-win { background: #E8F5EE; color: #1F7A48; }
+  .pill-short, .pill-loss { background: #FDF0EF; color: #B73A2C; }
+  .pill-breakeven { background: #FAF8F4; color: #6B5D4F; }
+  .pnl { font-weight: 700; } .pos { color: #1F7A48; } .neg { color: #B73A2C; }
+  .types { font-size: 7.5pt; }
+  .type-pill { display: inline-block; background: #F3E8FF; color: #7C3AED; padding: 1px 5px; border-radius: 3px; margin: 0 2px 2px 0; font-weight: 600; }
+  .stat-bar { display: flex; gap: 16px; font-size: 9pt; font-family: 'Courier New', monospace; margin: 4px 0 0 0; padding: 5px 8px; background: #FAF8F4; border-radius: 4px; }
+  .stat-bar span { color: #6B5D4F; }
+  .stat-bar strong { color: #2C2418; }
+  .no-trade { padding: 12px; text-align: center; background: #FAF8F4; border-radius: 4px; color: #6B5D4F; font-style: italic; font-size: 9.5pt; }
+  .footer { margin-top: 14px; padding-top: 6px; border-top: 1px solid #E8E0D4; font-size: 7.5pt; color: #9C8E7E; font-family: 'Courier New', monospace; text-align: center; }
+  @media print { body { padding: 0; } .page { max-width: 100%; } }
+</style></head><body>
+<div class="page">
+  <div class="header">
+    <h1>Daily Journal · ${esc(dateStr)}</h1>
+    <div class="date">${esc(dateISO)}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Pre-market · Fundamentals</div>
+    <div class="section-body pre-block">${(p.pre_fundamentals || "").trim() ? esc(p.pre_fundamentals) : '<span class="empty">No fundamentals written.</span>'}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Pre-market · Technicals</div>
+    <div class="section-body pre-block">${(p.pre_technicals || "").trim() ? esc(p.pre_technicals) : '<span class="empty">No technicals written.</span>'}</div>
+  </div>
+
+  ${p.trade_taken === false ? `
+  <div class="section">
+    <div class="section-title">Result</div>
+    <div class="no-trade">✓ No-trade day — sat on hands.</div>
+  </div>
+  ` : ""}
+
+  ${p.trade_taken === true || trades.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Trades · ${trades.length}</div>
+    ${tradeStats ? `
+    <div class="stat-bar">
+      <span>Wins: <strong>${tradeStats.w}</strong></span>
+      <span>Losses: <strong>${tradeStats.l}</strong></span>
+      <span>Day PnL: <strong class="${tradeStats.pnlPct >= 0 ? "pos" : "neg"}">${tradeStats.pnlPct >= 0 ? "+" : "−"}${Math.abs(tradeStats.pnlPct).toFixed(2)}%</strong></span>
+      <span>Day $: <strong class="${tradeStats.pnlUsd >= 0 ? "pos" : "neg"}">${tradeStats.pnlUsd >= 0 ? "+" : "−"}$${Math.abs(tradeStats.pnlUsd).toFixed(0)}</strong></span>
+    </div>
+    ` : ""}
+    ${trades.length > 0 ? `
+    <table class="trades">
+      <thead><tr><th>Session</th><th>Pair</th><th>Dir</th><th>Result</th><th>Entry</th><th>Exit</th><th>R:R</th><th>P&amp;L %</th><th>P&amp;L $</th><th>Types</th></tr></thead>
+      <tbody>${tradesHTML}</tbody>
+    </table>
+    ` : '<div class="empty">No trades logged for this day.</div>'}
+  </div>
+
+  <div class="section">
+    <div class="section-title">What happened to the market</div>
+    <div class="section-body post-block">${(p.post_what_happened || "").trim() ? esc(p.post_what_happened) : '<span class="empty">Not yet written.</span>'}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Mistakes</div>
+    <div class="section-body mistakes-block">${(p.post_deviations || "").trim() ? esc(p.post_deviations) : '<span class="empty">No mistakes logged.</span>'}</div>
+  </div>
+  ` : ""}
+
+  <div class="footer">Varmari · Generated ${new Date().toLocaleString()}</div>
+</div>
+<script>setTimeout(() => window.print(), 250);</script>
+</body></html>`;
+
+  const w = window.open("", "_blank");
+  if (!w) { alert("Pop-up blocked — please allow popups for this site."); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
 const emptyTrade = () => ({
   date: new Date().toISOString().split("T")[0],
   session: "London", pair: "EUR/USD", risk: 1, direction: "Long",
@@ -1152,6 +1295,11 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
 
   const handleBlur = () => { if (dirty) save(); };
 
+  // PDF Export — use shared helper, pass current plan + trades
+  const exportPDF = () => {
+    exportDailyPDF({ user, activeAccount, dateISO: viewDateISO, dayTrades, plan });
+  };
+
   const dayLabel = (iso) => {
     const d = parseLocalDate(iso);
     return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -1223,6 +1371,7 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
             <button onClick={() => setShowPastList(s => !s)} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: T.purple, borderColor: T.purple + "40", marginLeft: 4 }}>
               {showPastList ? "Hide past plans ↑" : "Past plans ↓"}
             </button>
+            <button onClick={exportPDF} title="Export this day as PDF (A4)" style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: T.accent, borderColor: T.accent + "40", marginLeft: 4 }}>⏷ PDF</button>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {dirty && <span style={{ fontSize: 11, color: T.amber, fontStyle: "italic" }}>unsaved</span>}
@@ -1282,131 +1431,122 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
         </div>
       )}
 
-      {/* 1. FUNDAMENTALS */}
-      <div style={{ ...cardS, padding: 20, borderTop: `3px solid ${T.blue}` }}>
-        <div style={sectionLabel(T.blue)}>1 · Fundamentals · macro story</div>
-        <div style={hintStyle}>News, economic data, central bank context, sentiment. ~1 hour of writing.</div>
-        <textarea
-          value={plan.pre_fundamentals}
-          onChange={e => updateField("pre_fundamentals", e.target.value)}
-          onBlur={handleBlur}
-          placeholder="Macro context, data releases, central banks, sentiment shifts, capital flows..."
-          style={bigTA}
-        />
+      {/* PRE-MARKET — Fundamentals + Technicals in one compact card */}
+      <div style={{ ...cardS, padding: 14, borderTop: `3px solid ${T.blue}` }}>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, fontFamily: font }}>Fundamentals</div>
+          <textarea
+            value={plan.pre_fundamentals}
+            onChange={e => updateField("pre_fundamentals", e.target.value)}
+            onBlur={handleBlur}
+            placeholder="Macro context, data releases, central banks, sentiment, capital flows..."
+            style={{ ...bigTA, minHeight: 130 }}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, fontFamily: font }}>Technicals</div>
+          <textarea
+            value={plan.pre_technicals}
+            onChange={e => updateField("pre_technicals", e.target.value)}
+            onBlur={handleBlur}
+            placeholder="EURUSD: daily broken at 1.0850, watching retest. GBPJPY: trending, pullback to 190.50..."
+            style={{ ...bigTA, minHeight: 130 }}
+          />
+        </div>
       </div>
 
-      {/* 2. TECHNICALS */}
-      <div style={{ ...cardS, padding: 20, borderTop: `3px solid ${T.blue}` }}>
-        <div style={sectionLabel(T.blue)}>2 · Technicals · chart story</div>
-        <div style={hintStyle}>Key levels, structure, where to enter, where not to. ~30 min.</div>
-        <textarea
-          value={plan.pre_technicals}
-          onChange={e => updateField("pre_technicals", e.target.value)}
-          onBlur={handleBlur}
-          placeholder="EURUSD: daily structure broken at 1.0850, watching for retest. GBPJPY: trending, pullback to 190.50..."
-          style={bigTA}
-        />
-      </div>
-
-      {/* 3. TOGGLE: Trade taken? */}
-      <div style={{ ...cardS, padding: 18, borderTop: `3px solid ${T.accent}` }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <div style={{ ...sectionLabel(T.accent), marginBottom: 4 }}>3 · Trade taken today?</div>
-            <div style={{ fontSize: 11, color: T.textLight, fontStyle: "italic" }}>Sitting on your hands is a win. Mark "No trade" without guilt.</div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
+      {/* TOGGLE: Trade taken? — slim */}
+      <div style={{ ...cardS, padding: 10, borderTop: `3px solid ${T.accent}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <span style={{ fontSize: 11, color: T.text, fontWeight: 600, fontFamily: mono, letterSpacing: 0.5 }}>Trade taken today?</span>
+          <div style={{ display: "flex", gap: 6 }}>
             <button onClick={() => setTradeTaken(true)} style={{
-              padding: "10px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, fontFamily: font,
+              padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, fontFamily: font,
               cursor: "pointer",
               border: `1px solid ${plan.trade_taken === true ? T.green : T.border}`,
               background: plan.trade_taken === true ? T.green : T.card,
               color: plan.trade_taken === true ? "#fff" : T.text,
-            }}>✓ Trade taken</button>
+            }}>✓ Yes</button>
             <button onClick={() => setTradeTaken(false)} style={{
-              padding: "10px 20px", borderRadius: 8, fontSize: 13, fontWeight: 600, fontFamily: font,
+              padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, fontFamily: font,
               cursor: "pointer",
               border: `1px solid ${plan.trade_taken === false ? T.textMid : T.border}`,
               background: plan.trade_taken === false ? T.textMid : T.card,
               color: plan.trade_taken === false ? "#fff" : T.text,
-            }}>✕ No trade</button>
+            }}>✕ No</button>
           </div>
         </div>
       </div>
 
-      {/* IF TRADE TAKEN: trades list + new trade + What happened + Mistakes */}
+      {/* IF TRADE TAKEN: trades list + what happened + mistakes all in one card, compact */}
       {plan.trade_taken === true && (
-        <>
-          {/* TRADES LIST */}
-          <div style={{ ...cardS, padding: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>
-                {dayTrades.length === 0 ? "No trades logged yet for this day" : `Trades · ${dayTrades.length}`}
-              </span>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                {dayStats && (
-                  <div style={{ display: "flex", gap: 10, fontSize: 11, fontFamily: mono }}>
-                    <span style={{ color: T.green }}>{dayStats.wins}W</span>
-                    <span style={{ color: T.red }}>{dayStats.losses}L</span>
-                    {dayStats.wr != null && <span style={{ color: dayStats.wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{dayStats.wr.toFixed(0)}%</span>}
-                    <span style={{ color: cP(dayStats.pnl), fontWeight: 700 }}>{fP(dayStats.pnl)}</span>
-                  </div>
-                )}
-                <button onClick={() => { onNewTrade(viewDateISO); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ ...btnP, padding: "7px 14px", fontSize: 12 }}>+ New Trade</button>
-              </div>
+        <div style={{ ...cardS, padding: 14, borderTop: `3px solid ${T.purple}` }}>
+          {/* Trades row */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>
+              {dayTrades.length === 0 ? "No trades logged yet" : `Trades · ${dayTrades.length}`}
+            </span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {dayStats && (
+                <div style={{ display: "flex", gap: 8, fontSize: 11, fontFamily: mono }}>
+                  <span style={{ color: T.green }}>{dayStats.wins}W</span>
+                  <span style={{ color: T.red }}>{dayStats.losses}L</span>
+                  {dayStats.wr != null && <span style={{ color: dayStats.wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{dayStats.wr.toFixed(0)}%</span>}
+                  <span style={{ color: cP(dayStats.pnl), fontWeight: 700 }}>{fP(dayStats.pnl)}</span>
+                </div>
+              )}
+              <button onClick={() => { onNewTrade(viewDateISO); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ ...btnP, padding: "6px 12px", fontSize: 11 }}>+ Trade</button>
             </div>
-
-            {dayTrades.length === 0 ? (
-              <div style={{ padding: "16px 12px", background: T.cardAlt, borderRadius: 8, border: `1px dashed ${T.border}`, textAlign: "center", fontSize: 12, color: T.textMid }}>
-                Click "+ New Trade" to log a trade for {viewDateISO}.
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {dayTrades.map(t => (
-                  <div key={t.id} style={{ background: T.cardAlt, border: `1px solid ${T.borderLight}`, borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <Pill text={t.pair} type="pair" />
-                      <Pill text={t.direction} />
-                      <Pill text={t.result} />
-                      <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{t.session}</span>
-                    </div>
-                    <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
-                      <span style={{ fontSize: 11, fontFamily: mono, color: cP(t.pnl_usd) }}>{fU(t.pnl_usd)}</span>
-                      <button onClick={() => { onEditTrade(t); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* WHAT HAPPENED */}
-          <div style={{ ...cardS, padding: 20, borderTop: `3px solid ${T.purple}` }}>
-            <div style={sectionLabel(T.purple)}>4 · What happened to the market</div>
-            <div style={hintStyle}>The day as it played out. Were you right or wrong about bias? Did setups appear? How did you execute?</div>
+          {dayTrades.length === 0 ? (
+            <div style={{ padding: "10px 12px", background: T.cardAlt, borderRadius: 6, border: `1px dashed ${T.border}`, textAlign: "center", fontSize: 11, color: T.textMid, marginBottom: 12 }}>
+              Click "+ Trade" to log a trade for {viewDateISO}.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+              {dayTrades.map(t => (
+                <div key={t.id} style={{ background: T.cardAlt, border: `0.5px solid ${T.borderLight}`, borderRadius: 6, padding: "6px 10px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                    <Pill text={t.pair} type="pair" />
+                    <Pill text={t.direction} />
+                    <Pill text={t.result} />
+                    <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{t.session}</span>
+                  </div>
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
+                    <span style={{ fontSize: 10, fontFamily: mono, color: cP(t.pnl_usd) }}>{fU(t.pnl_usd)}</span>
+                    <button onClick={() => { onEditTrade(t); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ background: "none", border: "none", color: T.amber, fontSize: 11, padding: "2px 4px", cursor: "pointer" }}>✎</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* What happened — compact, inline */}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, fontFamily: font }}>What happened to the market</div>
             <textarea
               value={plan.post_what_happened}
               onChange={e => updateField("post_what_happened", e.target.value)}
               onBlur={handleBlur}
-              placeholder="USD dumped on weaker CPI. My bullish bias was wrong. Got short EURUSD at 1.0860 after London open, hit TP at 1.0810..."
-              style={bigTA}
+              placeholder="USD dumped on weaker CPI. My bullish bias was wrong. Short EURUSD 1.0860, TP 1.0810..."
+              style={{ ...bigTA, minHeight: 110 }}
             />
           </div>
 
-          {/* MISTAKES */}
-          <div style={{ ...cardS, padding: 20, borderTop: `3px solid ${T.purple}` }}>
-            <div style={sectionLabel(T.purple)}>5 · Mistakes · where I broke my own rules</div>
-            <div style={hintStyle}>Be ruthless. Every deviation. No excuses, no justifications.</div>
+          {/* Mistakes — compact, inline */}
+          <div>
+            <div style={{ fontSize: 10, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, fontFamily: font }}>Mistakes</div>
             <textarea
               value={plan.post_deviations}
               onChange={e => updateField("post_deviations", e.target.value)}
               onBlur={handleBlur}
-              placeholder="Plan said only USD longs but I shorted EURUSD. That's a deviation even though it worked. Took 3 trades not 2 as planned..."
-              style={bigTA}
+              placeholder="Plan said USD longs but I shorted EURUSD. Took 3 trades not 2..."
+              style={{ ...bigTA, minHeight: 90 }}
             />
           </div>
-        </>
+        </div>
       )}
 
       {/* IF NO TRADE: short message */}
@@ -2496,6 +2636,7 @@ function Journal({ user, onLogout }) {
   const [dayModal, setDayModal] = useState(null); // { dateISO, trades } or null
   const [replayTrade, setReplayTrade] = useState(null);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [dashboardPeriod, setDashboardPeriod] = useState("all"); // all | year | month | week
   const [exportingHTML, setExportingHTML] = useState(false);
 
   useEffect(() => {
@@ -2912,26 +3053,44 @@ function downloadJSON() {
 
   const S = useMemo(() => {
     if (!activeAccount || !trades.length) return null;
+    // Apply dashboard period filter — fixed-period scope for the whole dashboard
+    let _trades = trades;
+    if (dashboardPeriod !== "all") {
+      const now = new Date();
+      let startISO, endISO;
+      if (dashboardPeriod === "year") {
+        startISO = `${now.getFullYear()}-01-01`;
+        endISO = `${now.getFullYear()}-12-31`;
+      } else if (dashboardPeriod === "month") {
+        startISO = isoDate(startOfMonth(now));
+        endISO = isoDate(endOfMonth(now));
+      } else if (dashboardPeriod === "week") {
+        startISO = isoDate(startOfWeek(now));
+        endISO = isoDate(endOfWeek(now));
+      }
+      _trades = _trades.filter(t => t.date >= startISO && t.date <= endISO);
+    }
+    if (_trades.length === 0) return null;
     const base = activeAccount.starting_balance;
-    const n = trades.length;
-    const w = trades.filter(t => t.result === "Win"), l = trades.filter(t => t.result === "Loss"), b = trades.filter(t => t.result === "Breakeven");
+    const n = _trades.length;
+    const w = _trades.filter(t => t.result === "Win"), l = _trades.filter(t => t.result === "Loss"), b = _trades.filter(t => t.result === "Breakeven");
     const wr = w.length / (w.length + l.length || 1) * 100;
-    const tPnl = trades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
-    const tUsd = trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+    const tPnl = _trades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+    const tUsd = _trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
     const avgW = w.length ? w.reduce((s, t) => s + parseFloat(t.pnl_pct || 0), 0) / w.length : 0;
     const avgL = l.length ? l.reduce((s, t) => s + parseFloat(t.pnl_pct || 0), 0) / l.length : 0;
     const pf = Math.abs(avgL) > 0 ? Math.abs(avgW / avgL) : 0;
-    const best = Math.max(...trades.map(t => parseFloat(t.pnl_pct) || 0));
-    const worst = Math.min(...trades.map(t => parseFloat(t.pnl_pct) || 0));
+    const best = Math.max(..._trades.map(t => parseFloat(t.pnl_pct) || 0));
+    const worst = Math.min(..._trades.map(t => parseFloat(t.pnl_pct) || 0));
     let streak = 0, maxS = 0;
-    [...trades].sort((a, b) => a.date.localeCompare(b.date)).forEach(t => { if (t.result === "Win") { streak++; maxS = Math.max(maxS, streak); } else streak = 0; });
+    [..._trades].sort((a, b) => a.date.localeCompare(b.date)).forEach(t => { if (t.result === "Win") { streak++; maxS = Math.max(maxS, streak); } else streak = 0; });
     const day = {}; DAYS_W.forEach(d => { day[d] = { n: 0, w: 0, l: 0, be: 0, pnl: 0 }; });
-    trades.forEach(t => { if (day[t.day]) { day[t.day].n++; if (t.result === "Win") day[t.day].w++; else if (t.result === "Loss") day[t.day].l++; else day[t.day].be++; day[t.day].pnl += parseFloat(t.pnl_pct) || 0; } });
+    _trades.forEach(t => { if (day[t.day]) { day[t.day].n++; if (t.result === "Win") day[t.day].w++; else if (t.result === "Loss") day[t.day].l++; else day[t.day].be++; day[t.day].pnl += parseFloat(t.pnl_pct) || 0; } });
     const sess = {}; SESSIONS.forEach(s => { sess[s] = { n: 0, w: 0, l: 0, pnl: 0 }; });
-    trades.forEach(t => { if (sess[t.session]) { sess[t.session].n++; if (t.result === "Win") sess[t.session].w++; else if (t.result === "Loss") sess[t.session].l++; sess[t.session].pnl += parseFloat(t.pnl_pct) || 0; } });
+    _trades.forEach(t => { if (sess[t.session]) { sess[t.session].n++; if (t.result === "Win") sess[t.session].w++; else if (t.result === "Loss") sess[t.session].l++; sess[t.session].pnl += parseFloat(t.pnl_pct) || 0; } });
     const pair = {};
     pairNames.forEach(p => { if (!pair[p]) pair[p] = { n: 0, w: 0, l: 0, be: 0, pnl: 0, usd: 0 }; });
-    trades.forEach(t => {
+    _trades.forEach(t => {
       if (!t.pair) return;
       if (!pair[t.pair]) pair[t.pair] = { n: 0, w: 0, l: 0, be: 0, pnl: 0, usd: 0 };
       pair[t.pair].n++;
@@ -2942,10 +3101,10 @@ function downloadJSON() {
       pair[t.pair].usd += parseFloat(t.pnl_usd) || 0;
     });
     const dir = { Long: { n: 0, w: 0, l: 0, pnl: 0 }, Short: { n: 0, w: 0, l: 0, pnl: 0 } };
-    trades.forEach(t => { if (dir[t.direction]) { dir[t.direction].n++; if (t.result === "Win") dir[t.direction].w++; else if (t.result === "Loss") dir[t.direction].l++; dir[t.direction].pnl += parseFloat(t.pnl_pct) || 0; } });
+    _trades.forEach(t => { if (dir[t.direction]) { dir[t.direction].n++; if (t.result === "Win") dir[t.direction].w++; else if (t.result === "Loss") dir[t.direction].l++; dir[t.direction].pnl += parseFloat(t.pnl_pct) || 0; } });
     const mo = {};
-    trades.forEach(t => { const m = t.date?.substring(0, 7); if (m) { if (!mo[m]) mo[m] = { n: 0, w: 0, l: 0, pnl: 0, usd: 0 }; mo[m].n++; if (t.result === "Win") mo[m].w++; else if (t.result === "Loss") mo[m].l++; mo[m].pnl += parseFloat(t.pnl_pct) || 0; mo[m].usd += parseFloat(t.pnl_usd) || 0; } });
-    const sorted = [...trades].sort((a, b) => a.date.localeCompare(b.date));
+    _trades.forEach(t => { const m = t.date?.substring(0, 7); if (m) { if (!mo[m]) mo[m] = { n: 0, w: 0, l: 0, pnl: 0, usd: 0 }; mo[m].n++; if (t.result === "Win") mo[m].w++; else if (t.result === "Loss") mo[m].l++; mo[m].pnl += parseFloat(t.pnl_pct) || 0; mo[m].usd += parseFloat(t.pnl_usd) || 0; } });
+    const sorted = [..._trades].sort((a, b) => a.date.localeCompare(b.date));
     let bal = base;
     const eq = [{ date: "Start", balance: base }];
     let peak = base, maxDD = 0, maxDDpct = 0, lastPeakDate = "Start";
@@ -2965,18 +3124,18 @@ function downloadJSON() {
       const peakD = new Date(lastPeakDate + "T12:00:00");
       daysSincePeak = Math.max(0, Math.floor((today - peakD) / (1000 * 60 * 60 * 24)));
     }
-    const rValues = trades.map(realizedR).filter(v => v != null);
-    const intendedRs = trades.map(t => parseRR(t.rr)).filter(v => v != null);
+    const rValues = _trades.map(realizedR).filter(v => v != null);
+    const intendedRs = _trades.map(t => parseRR(t.rr)).filter(v => v != null);
     const avgIntendedR = intendedRs.length ? intendedRs.reduce((s,v) => s+v, 0) / intendedRs.length : null;
     const avgRealizedR = rValues.length ? rValues.reduce((s,v) => s+v, 0) / rValues.length : null;
-    const mfeTrades = trades.filter(t => t.result === "Win").map(t => {
+    const mfeTrades = _trades.filter(t => t.result === "Win").map(t => {
       const mfe = parseRR(t.max_r);
       const realized = realizedR(t);
       if (mfe == null || realized == null) return null;
       return { id: t.id, date: t.date, pair: t.pair, direction: t.direction, result: t.result, mfe, realized, leftOnTable: Math.max(0, mfe - realized) };
     }).filter(x => x != null);
     let exitQuality = null;
-    const totalWins = trades.filter(t => t.result === "Win").length;
+    const totalWins = _trades.filter(t => t.result === "Win").length;
     if (mfeTrades.length > 0) {
       const totalMFE = mfeTrades.reduce((s, x) => s + x.mfe, 0);
       const totalRealized = mfeTrades.reduce((s, x) => s + x.realized, 0);
@@ -2989,7 +3148,7 @@ function downloadJSON() {
     }
 
     // TILT DETECTION — trade immediately after a loss
-    const chrono = [...trades].sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.created_at || "").localeCompare(b.created_at || ""));
+    const chrono = [..._trades].sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.created_at || "").localeCompare(b.created_at || ""));
     const postLossTrades = [];
     for (let i = 1; i < chrono.length; i++) {
       if (chrono[i - 1].result === "Loss") postLossTrades.push(chrono[i]);
@@ -3025,7 +3184,7 @@ function downloadJSON() {
       const byType = {};
       tradeTypes.forEach(tt => { byType[tt.name] = { name: tt.name, n: 0, w: 0, l: 0, pnl: 0, usd: 0 }; });
       let untaggedN = 0, untaggedW = 0, untaggedL = 0, untaggedPnl = 0, untaggedUsd = 0;
-      trades.forEach(t => {
+      _trades.forEach(t => {
         const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
         if (types.length === 0) {
           untaggedN++;
@@ -3060,7 +3219,7 @@ function downloadJSON() {
     }
 
     return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, avgIntendedR, avgRealizedR, exitQuality, typeStats, tilt, pressed };
-  }, [trades, activeAccount, pairNames, tradeTypes]);
+  }, [trades, activeAccount, pairNames, tradeTypes, dashboardPeriod]);
 
   const filtered = useMemo(() => {
     let list = [...trades];
@@ -3082,9 +3241,6 @@ function downloadJSON() {
   const tabs = [
     { k: "dashboard", l: "Dashboard", i: "◈" },
     { k: "log", l: "Trade Log", i: "☰" },
-    { k: "pairs", l: "Pairs", i: "⟡" },
-    { k: "monthly", l: "Monthly", i: "▣" },
-    { k: "year", l: "Year", i: "◰" },
     { k: "recap", l: "Daily", i: "📋" },
     { k: "discipline", l: "Discipline", i: "✓" },
   ];
@@ -3146,7 +3302,11 @@ function downloadJSON() {
             {/* Header */}
             <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{parseLocalDate(dayModal.dateISO).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>
+                  {dayModal.dateISO.startsWith("Week ")
+                    ? dayModal.dateISO
+                    : parseLocalDate(dayModal.dateISO).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                </div>
                 <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 2 }}>
                   {dayModal.trades.length} {dayModal.trades.length === 1 ? "trade" : "trades"} ·
                   {" "}<span style={{ color: T.green }}>{dayModal.trades.filter(t => t.result === "Win").length}W</span> ·
@@ -3262,12 +3422,50 @@ function downloadJSON() {
 
             {tab === "dashboard" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* PERIOD FILTER — visible whenever there's at least 1 trade in the account */}
+                {trades.length > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+                    <div style={{ display: "flex", gap: 4, background: T.cardAlt, border: `0.5px solid ${T.border}`, borderRadius: 8, padding: 3 }}>
+                      {[
+                        { k: "all", l: "All time" },
+                        { k: "year", l: "Year" },
+                        { k: "month", l: "Month" },
+                        { k: "week", l: "Week" },
+                      ].map(p => {
+                        const active = dashboardPeriod === p.k;
+                        return (
+                          <button key={p.k} onClick={() => setDashboardPeriod(p.k)} style={{
+                            padding: "6px 14px", borderRadius: 6, border: "none", cursor: "pointer",
+                            fontSize: 11, fontWeight: active ? 700 : 500, fontFamily: font,
+                            background: active ? T.card : "transparent",
+                            color: active ? T.accent : T.textMid,
+                            boxShadow: active ? `0 1px 3px rgba(0,0,0,0.06)` : "none",
+                          }}>{p.l}</button>
+                        );
+                      })}
+                    </div>
+                    {dashboardPeriod !== "all" && (
+                      <span style={{ fontSize: 11, color: T.textLight, fontStyle: "italic", fontFamily: mono }}>
+                        Stats below filtered to: {dashboardPeriod === "year" ? new Date().getFullYear() : dashboardPeriod === "month" ? new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : "current week"}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {!S ? (
                   <div style={{ ...cardS, padding: 60, textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.3 }}>◈</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No trades yet in {activeAccount.name}</div>
-                    <div style={{ color: T.textMid, fontSize: 13, marginBottom: 20 }}>Starting Balance: ${activeAccount.starting_balance.toLocaleString()}</div>
-                    <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={btnP}>+ New Trade</button>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
+                      {trades.length === 0 ? `No trades yet in ${activeAccount.name}` : `No trades in selected ${dashboardPeriod}`}
+                    </div>
+                    <div style={{ color: T.textMid, fontSize: 13, marginBottom: 20 }}>
+                      {trades.length === 0 ? `Starting Balance: $${activeAccount.starting_balance.toLocaleString()}` : `Switch to "All time" to see all ${trades.length} trades.`}
+                    </div>
+                    {trades.length === 0 ? (
+                      <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={btnP}>+ New Trade</button>
+                    ) : (
+                      <button onClick={() => setDashboardPeriod("all")} style={btnP}>Show all trades</button>
+                    )}
                   </div>
                 ) : (<>
                   {/* HERO STRIP: Today / This Week / This Month */}
@@ -3447,6 +3645,58 @@ function downloadJSON() {
                     );
                   })()}
 
+                  {/* EQUITY CURVE — slim sparkline showing cumulative balance over time */}
+                  {S.eq && S.eq.length > 1 && (
+                    <div style={{ ...cardS, padding: "16px 20px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Equity Curve</span>
+                          <span style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>{S.eq.length - 1} {S.eq.length - 1 === 1 ? "trade" : "trades"}</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 14, fontSize: 11, fontFamily: mono, alignItems: "baseline" }}>
+                          <div>
+                            <span style={{ color: T.textLight }}>Start </span>
+                            <span style={{ color: T.text, fontWeight: 600 }}>${S.base.toFixed(0)}</span>
+                          </div>
+                          <div>
+                            <span style={{ color: T.textLight }}>Now </span>
+                            <span style={{ color: S.tUsd >= 0 ? T.green : T.red, fontWeight: 700 }}>${(S.base + S.tUsd).toFixed(0)}</span>
+                          </div>
+                          <div>
+                            <span style={{ color: T.textLight }}>P&L </span>
+                            <span style={{ color: S.tUsd >= 0 ? T.green : T.red, fontWeight: 700 }}>{S.tUsd >= 0 ? "+" : "−"}${Math.abs(S.tUsd).toFixed(0)}</span>
+                            <span style={{ color: S.tPnl >= 0 ? T.green : T.red, marginLeft: 4 }}>({S.tPnl >= 0 ? "+" : ""}{S.tPnl.toFixed(2)}%)</span>
+                          </div>
+                          {S.peak > 0 && (
+                            <div>
+                              <span style={{ color: T.textLight }}>Peak </span>
+                              <span style={{ color: T.text, fontWeight: 600 }}>${(S.base + S.peak).toFixed(0)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <ResponsiveContainer width="100%" height={130}>
+                        <AreaChart data={S.eq} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={S.tUsd >= 0 ? T.green : T.red} stopOpacity={0.25}/>
+                              <stop offset="100%" stopColor={S.tUsd >= 0 ? T.green : T.red} stopOpacity={0.0}/>
+                            </linearGradient>
+                          </defs>
+                          <XAxis dataKey="date" hide />
+                          <YAxis domain={[S.yMin, S.yMax]} hide />
+                          <Tooltip
+                            contentStyle={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 6, fontSize: 11, padding: "6px 10px", fontFamily: mono }}
+                            labelStyle={{ color: T.textMid, fontSize: 10 }}
+                            formatter={(val) => [`$${val.toFixed(0)}`, "Balance"]}
+                          />
+                          <ReferenceLine y={S.base} stroke={T.border} strokeDasharray="3 3" strokeWidth={1} />
+                          <Area type="monotone" dataKey="balance" stroke={S.tUsd >= 0 ? T.green : T.red} strokeWidth={1.8} fill="url(#eqGrad)" dot={false} activeDot={{ r: 3, fill: S.tUsd >= 0 ? T.green : T.red }} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
                   {/* CALENDAR VIEW — replaces Equity Curve, Performance by Rating, Exit Quality */}
                   {(() => {
                     const year = calMonth.getFullYear();
@@ -3590,15 +3840,28 @@ function downloadJSON() {
                           {/* Weekly summary column — purple-tinted, separated by gap */}
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <div style={{ textAlign: "center", fontSize: 10, color: T.purple, fontFamily: mono, letterSpacing: 1, textTransform: "uppercase", padding: "6px 0", fontWeight: 600 }}>Week</div>
-                            {weeks.map((wk, wi) => (
-                              <div key={"wsum-" + wi} style={{
-                                minHeight: 78, padding: "10px 12px",
-                                background: wk.n === 0 ? T.card : `linear-gradient(135deg, ${T.purpleBg} 0%, #FAF7FF 100%)`,
-                                border: `0.5px ${wk.n === 0 ? "dashed" : "solid"} ${wk.n === 0 ? T.purple + "30" : T.purple + "30"}`,
-                                borderRadius: 8,
-                                display: "flex", flexDirection: "column", justifyContent: "center",
-                                opacity: wk.n === 0 ? 0.6 : 1,
-                              }}>
+                            {weeks.map((wk, wi) => {
+                              const wkTrades = wk.cells.filter(c => !c.blank).flatMap(c => c.trades || []);
+                              const wkCells = wk.cells.filter(c => !c.blank && c.day != null);
+                              const wkStart = wkCells.length > 0 ? `${year}-${pad2(monthIdx + 1)}-${pad2(wkCells[0].day)}` : null;
+                              const wkEnd = wkCells.length > 0 ? `${year}-${pad2(monthIdx + 1)}-${pad2(wkCells[wkCells.length - 1].day)}` : null;
+                              const clickable = wk.n > 0;
+                              return (
+                              <div key={"wsum-" + wi}
+                                onClick={() => clickable && setDayModal({ dateISO: `Week ${wi + 1} · ${wkStart} → ${wkEnd}`, trades: wkTrades })}
+                                style={{
+                                  minHeight: 78, padding: "10px 12px",
+                                  background: wk.n === 0 ? T.card : `linear-gradient(135deg, ${T.purpleBg} 0%, #FAF7FF 100%)`,
+                                  border: `0.5px ${wk.n === 0 ? "dashed" : "solid"} ${wk.n === 0 ? T.purple + "30" : T.purple + "30"}`,
+                                  borderRadius: 8,
+                                  display: "flex", flexDirection: "column", justifyContent: "center",
+                                  opacity: wk.n === 0 ? 0.6 : 1,
+                                  cursor: clickable ? "pointer" : "default",
+                                  transition: "transform 120ms",
+                                }}
+                                onMouseEnter={e => { if (clickable) e.currentTarget.style.transform = "translateY(-1px)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; }}
+                              >
                                 <div style={{ fontSize: 9, color: T.purple, fontFamily: mono, letterSpacing: 1, fontWeight: 600, textTransform: "uppercase" }}>Week {wi + 1}</div>
                                 <div style={{ fontSize: 15, fontWeight: 700, fontFamily: mono, color: wk.n === 0 ? T.textLight : (wk.pnl >= 0 ? T.green : T.red), lineHeight: 1.1, marginTop: 4 }}>
                                   {wk.n === 0 ? "$0" : `${wk.pnl >= 0 ? "+" : "−"}$${Math.abs(wk.pnl).toFixed(0)}`}
@@ -3607,7 +3870,8 @@ function downloadJSON() {
                                   {wk.days} {wk.days === 1 ? "day" : "days"} · {wk.n}T
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
@@ -3775,24 +4039,6 @@ function downloadJSON() {
                     </div>
                   )}
 
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Recent Trades</span>
-                      <button onClick={() => setTab("log")} style={{ ...btnG, padding: "4px 10px", fontSize: 10 }}>View All →</button>
-                    </div>
-                    {trades.slice(0, 7).map(t => (
-                      <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${T.borderLight}`, gap: 8, flexWrap: "wrap" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono, width: 70 }}>{t.date}</span>
-                          <Pill text={t.pair} type="pair" /><Pill text={t.direction} />
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, fontFamily: mono, color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span>
-                          <Pill text={t.result} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 </>)}
               </div>
             )}
@@ -4027,6 +4273,7 @@ function downloadJSON() {
                                 </td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>
                                   <button onClick={() => setReplayTrade(t)} title="Replay" style={{ background: "none", border: "none", cursor: "pointer", color: T.purple, fontSize: 12, padding: "2px", marginRight: 4 }}>▶</button>
+                                  <button onClick={() => exportDailyPDF({ user, activeAccount, dateISO: t.date })} title="Export day as PDF" style={{ background: "none", border: "none", cursor: "pointer", color: T.accent, fontSize: 11, padding: "2px", marginRight: 4 }}>⏷</button>
                                   <button onClick={() => editTrade(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.amber, fontSize: 12, padding: "2px" }}>✎</button>
                                   <button onClick={() => deleteTrade(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 12, padding: "2px" }}>✕</button>
                                 </td>
@@ -4043,418 +4290,6 @@ function downloadJSON() {
               </div>
             )}
 
-            {tab === "pairs" && S && (() => {
-              const active = Object.keys(S.pair).filter(p => S.pair[p].n > 0).sort((a, b) => S.pair[b].pnl - S.pair[a].pnl);
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {active.length > 0 && (
-                    <div style={{ ...cardS, padding: 18 }}>
-                      <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 10 }}>PnL by Pair</div>
-                      <ResponsiveContainer width="100%" height={Math.max(active.length * 28, 80)}>
-                        <BarChart data={active.map(p => ({ pair: p, pnl: Math.round(S.pair[p].pnl * 100) / 100 }))} layout="vertical" margin={{ left: 60 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={T.borderLight} />
-                          <XAxis type="number" tick={{ fontSize: 9, fill: T.textLight, fontFamily: mono }} tickLine={false} axisLine={false} />
-                          <YAxis dataKey="pair" type="category" tick={{ fontSize: 10, fill: T.textMid, fontFamily: mono }} tickLine={false} axisLine={false} width={55} />
-                          <Tooltip contentStyle={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, fontFamily: mono, fontSize: 11 }} />
-                          <Bar dataKey="pnl" radius={[0, 4, 4, 0]}>{active.map((p, i) => <Cell key={i} fill={S.pair[p].pnl >= 0 ? T.green : T.red} opacity={0.75} />)}</Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                  <div style={{ ...cardS, overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono }}>
-                      <thead><tr style={{ background: T.cardAlt }}>
-                        {["Pair", "Trades", "W", "L", "BE", "WR%", "PnL %", "PnL $", "Avg"].map(h => <th key={h} style={{ textAlign: "left", padding: "10px 8px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>{h}</th>)}
-                      </tr></thead>
-                      <tbody>
-                        {active.map((p, i) => { const ps = S.pair[p]; const wr = ps.w / (ps.w + ps.l || 1) * 100; return (
-                          <tr key={p} style={{ background: i % 2 === 0 ? T.card : T.cardAlt }}>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={p} type="pair" /></td>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}` }}>{ps.n}</td>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}`, color: T.green }}>{ps.w}</td>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}`, color: T.red }}>{ps.l}</td>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid }}>{ps.be}</td>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}`, color: wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{wr.toFixed(1)}%</td>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}`, color: cP(ps.pnl), fontWeight: 600 }}>{fP(ps.pnl)}</td>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}`, color: cP(ps.usd) }}>{fU(ps.usd)}</td>
-                            <td style={{ padding: "8px", borderBottom: `1px solid ${T.borderLight}`, color: cP(ps.pnl / Math.max(ps.n, 1)) }}>{fP(ps.pnl / Math.max(ps.n, 1))}</td>
-                          </tr>
-                        ); })}
-                      </tbody>
-                    </table>
-                  </div>
-                  {active.length === 0 && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No pair data yet</div>}
-                </div>
-              );
-            })()}
-            {tab === "pairs" && !S && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No data yet</div>}
-
-            {tab === "monthly" && S && Object.keys(S.mo).length > 0 ? (() => {
-              // Build month-by-month analytics
-              const monthsAsc = Object.keys(S.mo).sort();
-              const monthsDesc = [...monthsAsc].reverse();
-              const last6 = monthsDesc.slice(0, 6).reverse(); // chronological order, oldest first
-
-              const monthMeta = {};
-              monthsAsc.forEach(m => {
-                const mTrades = trades.filter(t => t.date?.startsWith(m));
-                const wins = mTrades.filter(t => t.result === "Win");
-                const losses = mTrades.filter(t => t.result === "Loss");
-                const wr = (wins.length + losses.length) > 0 ? (wins.length / (wins.length + losses.length)) * 100 : 0;
-                const pnl = mTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
-                const usd = mTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
-                const best = mTrades.length ? Math.max(...mTrades.map(t => parseFloat(t.pnl_pct) || 0)) : 0;
-                const worst = mTrades.length ? Math.min(...mTrades.map(t => parseFloat(t.pnl_pct) || 0)) : 0;
-                // Max DD within the month (peak-to-trough on cumulative pnl_usd within month)
-                const sorted = [...mTrades].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-                let cum = 0, peak = 0, dd = 0;
-                sorted.forEach(t => {
-                  cum += parseFloat(t.pnl_usd) || 0;
-                  if (cum > peak) peak = cum;
-                  if (peak - cum > dd) dd = peak - cum;
-                });
-                // Avg risk + mistake rate
-                const avgRisk = mTrades.length ? mTrades.reduce((s, t) => s + (parseFloat(t.risk) || 0), 0) / mTrades.length : 0;
-                const mistakeCount = mTrades.filter(t => (t.notes_mistakes || "").trim()).length;
-                const mistakeRate = mTrades.length ? (mistakeCount / mTrades.length) * 100 : 0;
-
-                monthMeta[m] = {
-                  n: mTrades.length, w: wins.length, l: losses.length, wr, pnl, usd,
-                  best, worst, dd, avgRisk, mistakeCount, mistakeRate,
-                };
-              });
-
-              // Pair × Month heatmap data
-              const pairPnlByMonth = {};
-              trades.forEach(t => {
-                if (!t.pair || !t.date) return;
-                const m = t.date.substring(0, 7);
-                if (!pairPnlByMonth[t.pair]) pairPnlByMonth[t.pair] = { total: 0, byMonth: {} };
-                pairPnlByMonth[t.pair].total += parseFloat(t.pnl_pct) || 0;
-                if (!pairPnlByMonth[t.pair].byMonth[m]) pairPnlByMonth[t.pair].byMonth[m] = 0;
-                pairPnlByMonth[t.pair].byMonth[m] += parseFloat(t.pnl_pct) || 0;
-              });
-              const topPairs = Object.keys(pairPnlByMonth)
-                .map(p => ({ pair: p, ...pairPnlByMonth[p], traded: Object.keys(pairPnlByMonth[p].byMonth).length }))
-                .sort((a, b) => {
-                  // Sort by total absolute impact, then by recent activity
-                  const aImpact = Math.abs(a.total);
-                  const bImpact = Math.abs(b.total);
-                  return bImpact - aImpact;
-                })
-                .slice(0, 10);
-
-              // Heatmap color scale — find max absolute PnL across all cells in last6
-              let maxAbs = 0;
-              topPairs.forEach(p => last6.forEach(m => { const v = p.byMonth[m] || 0; if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v); }));
-              const heatColor = (v) => {
-                if (v === 0 || maxAbs === 0) return { bg: T.cardAlt, fg: T.textLight };
-                const intensity = Math.min(1, Math.abs(v) / maxAbs);
-                if (v > 0) {
-                  const alpha = 0.15 + intensity * 0.65;
-                  return { bg: `rgba(26, 135, 84, ${alpha})`, fg: intensity > 0.5 ? "#fff" : T.green };
-                } else {
-                  const alpha = 0.15 + intensity * 0.65;
-                  return { bg: `rgba(196, 52, 42, ${alpha})`, fg: intensity > 0.5 ? "#fff" : T.red };
-                }
-              };
-
-              const monthLabel = (m) => {
-                const [y, mo] = m.split("-");
-                const d = new Date(parseInt(y), parseInt(mo) - 1, 1);
-                return d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
-              };
-
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-                  {/* 1. MONTH-OVER-MONTH COMPARISON STRIP */}
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Month-over-Month · Last 6 months</span>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Are you improving or regressing?</span>
-                    </div>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 600 }}>
-                        <thead>
-                          <tr style={{ background: T.cardAlt }}>
-                            <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Metric</th>
-                            {last6.map(m => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[
-                            { k: "n", l: "Trades", fmt: v => v, color: () => T.text },
-                            { k: "wr", l: "Win Rate", fmt: v => `${v.toFixed(0)}%`, color: v => v >= 50 ? T.green : T.red },
-                            { k: "pnl", l: "PnL %", fmt: v => fP(v), color: cP },
-                            { k: "usd", l: "PnL $", fmt: v => fU(v), color: cP },
-                            { k: "best", l: "Best Trade", fmt: v => fP(v), color: () => T.green },
-                            { k: "worst", l: "Worst Trade", fmt: v => fP(v), color: () => T.red },
-                            { k: "dd", l: "Max DD ($)", fmt: v => v > 0 ? `−$${v.toFixed(0)}` : "—", color: () => T.red },
-                          ].map((row, ri) => (
-                            <tr key={row.k} style={{ background: ri % 2 === 0 ? T.card : T.cardAlt }}>
-                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>{row.l}</td>
-                              {last6.map(m => {
-                                const meta = monthMeta[m];
-                                const v = meta ? meta[row.k] : 0;
-                                const hasData = meta && meta.n > 0;
-                                return (
-                                  <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: hasData ? row.color(v) : T.textLight, fontWeight: 600, opacity: hasData ? 1 : 0.4 }}>
-                                    {hasData ? row.fmt(v) : "—"}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* 2. PAIR × MONTH HEATMAP */}
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Pair × Month Heatmap · Top {topPairs.length} pairs</span>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Which pairs to lean into · Which to drop</span>
-                    </div>
-                    {topPairs.length === 0 ? (
-                      <div style={{ padding: 20, textAlign: "center", color: T.textLight, fontSize: 12 }}>No pair data yet</div>
-                    ) : (
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 3, fontSize: 11, fontFamily: mono, minWidth: 600 }}>
-                          <thead>
-                            <tr>
-                              <th style={{ textAlign: "left", padding: "4px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Pair</th>
-                              {last6.map(m => <th key={m} style={{ textAlign: "center", padding: "4px 8px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
-                              <th style={{ textAlign: "right", padding: "4px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase" }}>Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {topPairs.map(p => (
-                              <tr key={p.pair}>
-                                <td style={{ padding: "6px 10px", background: T.cardAlt, borderRadius: 6 }}><Pill text={p.pair} type="pair" /></td>
-                                {last6.map(m => {
-                                  const v = p.byMonth[m] || 0;
-                                  const hc = heatColor(v);
-                                  return (
-                                    <td key={m} style={{ textAlign: "center", padding: "8px 6px", background: hc.bg, color: hc.fg, fontWeight: 700, borderRadius: 6, minWidth: 60 }}>
-                                      {v === 0 ? "—" : fP(v)}
-                                    </td>
-                                  );
-                                })}
-                                <td style={{ textAlign: "right", padding: "6px 10px", background: T.cardAlt, borderRadius: 6, color: cP(p.total), fontWeight: 700 }}>{fP(p.total)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 4. DISCIPLINE METRICS */}
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Discipline Metrics</span>
-                      <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Sizing · Frequency · Self-awareness</span>
-                    </div>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 600 }}>
-                        <thead>
-                          <tr style={{ background: T.cardAlt }}>
-                            <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Metric</th>
-                            {last6.map(m => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr style={{ background: T.card }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Trades / month</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? meta.n : "—"}</td>;
-                            })}
-                          </tr>
-                          <tr style={{ background: T.cardAlt }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Avg Risk %</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: meta && meta.avgRisk > 1.5 ? T.red : T.text, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${meta.avgRisk.toFixed(2)}%` : "—"}</td>;
-                            })}
-                          </tr>
-                          <tr style={{ background: T.card }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Mistakes Logged</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${meta.mistakeCount}` : "—"}</td>;
-                            })}
-                          </tr>
-                          <tr style={{ background: T.cardAlt }}>
-                            <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textMid, fontWeight: 600 }}>Mistake Rate</td>
-                            {last6.map(m => {
-                              const meta = monthMeta[m];
-                              const rate = meta ? meta.mistakeRate : 0;
-                              return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: rate > 30 ? T.red : rate > 0 ? T.amber : T.textLight, fontWeight: 600, opacity: meta && meta.n > 0 ? 1 : 0.4 }}>{meta && meta.n > 0 ? `${rate.toFixed(0)}%` : "—"}</td>;
-                            })}
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                    <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                      <strong style={{ color: T.amber }}>Watch for:</strong> Risk % creeping up after a winning streak. Trade count spiking (overtrading). Mistake rate falling to zero (stopped being honest with yourself, not actually improving).
-                    </div>
-                  </div>
-
-                  {/* 5. TRADE TYPE PER MONTH */}
-                  {tradeTypes.length > 0 && (
-                    <div style={{ ...cardS, padding: 18 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Trade Type per Month</span>
-                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Which types print, which lose, over time?</span>
-                      </div>
-                      {(() => {
-                        // Build {typeName: {monthKey: {n, w, l, pnl}}}
-                        const typeMonthPnl = {};
-                        tradeTypes.forEach(tt => { typeMonthPnl[tt.name] = {}; });
-                        last6.forEach(m => {
-                          tradeTypes.forEach(tt => { typeMonthPnl[tt.name][m] = { n: 0, w: 0, l: 0, pnl: 0 }; });
-                          const mTrades = trades.filter(t => t.date?.startsWith(m));
-                          mTrades.forEach(t => {
-                            const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
-                            types.forEach(name => {
-                              if (typeMonthPnl[name] && typeMonthPnl[name][m]) {
-                                typeMonthPnl[name][m].n++;
-                                if (t.result === "Win") typeMonthPnl[name][m].w++;
-                                else if (t.result === "Loss") typeMonthPnl[name][m].l++;
-                                typeMonthPnl[name][m].pnl += parseFloat(t.pnl_pct) || 0;
-                              }
-                            });
-                          });
-                        });
-                        const typesWithData = tradeTypes.filter(tt => last6.some(m => typeMonthPnl[tt.name][m].n > 0));
-                        if (typesWithData.length === 0) return <div style={{ padding: 14, textAlign: "center", color: T.textLight, fontSize: 12 }}>No trades tagged with types in last 6 months. Open the trade form and pick types.</div>;
-                        return (
-                          <div style={{ overflowX: "auto" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 600 }}>
-                              <thead>
-                                <tr style={{ background: T.cardAlt }}>
-                                  <th style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>Type</th>
-                                  {last6.map(m => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{monthLabel(m)}</th>)}
-                                  <th style={{ textAlign: "right", padding: "8px 10px", color: T.purple, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", fontWeight: 700 }}>Total</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {typesWithData.map((tt, i) => {
-                                  const totalPnl = last6.reduce((s, m) => s + typeMonthPnl[tt.name][m].pnl, 0);
-                                  const totalN = last6.reduce((s, m) => s + typeMonthPnl[tt.name][m].n, 0);
-                                  return (
-                                    <tr key={tt.name} style={{ background: i % 2 === 0 ? T.card : T.cardAlt }}>
-                                      <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.text, fontWeight: 600 }}>{tt.name}</td>
-                                      {last6.map(m => {
-                                        const cell = typeMonthPnl[tt.name][m];
-                                        if (cell.n === 0) return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.textLight, opacity: 0.4 }}>—</td>;
-                                        return <td key={m} style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(cell.pnl), fontWeight: 700 }}>{fP(cell.pnl)}<div style={{ fontSize: 9, color: T.textLight, fontWeight: 400 }}>{cell.n}T</div></td>;
-                                      })}
-                                      <td style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(totalPnl), fontWeight: 700, background: T.purpleBg + "50" }}>{fP(totalPnl)}<div style={{ fontSize: 9, color: T.textLight, fontWeight: 400 }}>{totalN}T</div></td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        );
-                      })()}
-                      <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
-                        <strong style={{ color: T.amber }}>Read:</strong> Types with consistent green Total = your real edge. Types that flip month-to-month = noise or you're forcing the setup. Types with consistent red = stop taking them.
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 6. TAG PERFORMANCE */}
-                  {(() => {
-                    const tagPerf = {};
-                    trades.forEach(t => {
-                      (t.tags || "").split(",").map(s => s.trim().toLowerCase()).filter(s => s).forEach(tag => {
-                        if (!tagPerf[tag]) tagPerf[tag] = { n: 0, w: 0, l: 0, pnl: 0, usd: 0 };
-                        tagPerf[tag].n++;
-                        if (t.result === "Win") tagPerf[tag].w++;
-                        else if (t.result === "Loss") tagPerf[tag].l++;
-                        tagPerf[tag].pnl += parseFloat(t.pnl_pct) || 0;
-                        tagPerf[tag].usd += parseFloat(t.pnl_usd) || 0;
-                      });
-                    });
-                    const tagsSorted = Object.entries(tagPerf).sort((a, b) => b[1].pnl - a[1].pnl);
-                    if (tagsSorted.length === 0) return null;
-                    return (
-                      <div style={{ ...cardS, padding: 18 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Tag Performance · {tagsSorted.length} {tagsSorted.length === 1 ? "tag" : "tags"}</span>
-                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>What kind of trade actually makes you money?</span>
-                        </div>
-                        <div style={{ overflowX: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono, minWidth: 500 }}>
-                            <thead>
-                              <tr style={{ background: T.cardAlt }}>
-                                {["Tag", "Trades", "W", "L", "WR%", "PnL %", "PnL $", "Avg"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>{h}</th>)}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {tagsSorted.map(([tag, s], i) => {
-                                const wr = (s.w + s.l) > 0 ? (s.w / (s.w + s.l)) * 100 : 0;
-                                const avg = s.pnl / s.n;
-                                return (
-                                  <tr key={tag} style={{ background: i % 2 === 0 ? T.card : T.cardAlt }}>
-                                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}` }}>
-                                      <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: T.accentBg, color: T.accent, fontWeight: 600 }}>#{tag}</span>
-                                    </td>
-                                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}` }}>{s.n}</td>
-                                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.green }}>{s.w}</td>
-                                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: T.red }}>{s.l}</td>
-                                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{wr.toFixed(0)}%</td>
-                                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(s.pnl), fontWeight: 700 }}>{fP(s.pnl)}</td>
-                                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(s.usd) }}>{fU(s.usd)}</td>
-                                    <td style={{ padding: "8px 10px", borderBottom: `1px solid ${T.borderLight}`, color: cP(avg) }}>{fP(avg)}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* MONTH BREAKDOWN — keeps the old per-month day grid at the bottom */}
-                  <div style={{ ...cardS, padding: 18 }}>
-                    <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 12 }}>All Months · Click any trade to edit</div>
-                    {monthsDesc.map(m => {
-                      const mm = S.mo[m];
-                      const wr = mm.w / (mm.w + mm.l || 1) * 100;
-                      const monthTrades = trades.filter(t => t.date?.startsWith(m)).sort((a, b) => a.date.localeCompare(b.date));
-                      return (
-                        <div key={m} style={{ background: T.cardAlt, borderRadius: 10, padding: 14, marginBottom: 10, border: `1px solid ${T.borderLight}` }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, fontFamily: mono }}>{m}</span>
-                            <div style={{ display: "flex", gap: 14, fontSize: 11, fontFamily: mono, flexWrap: "wrap" }}>
-                              <span>{mm.n}T</span>
-                              <span style={{ color: T.green }}>{mm.w}W</span>
-                              <span style={{ color: T.red }}>{mm.l}L</span>
-                              <span style={{ color: wr >= 50 ? T.green : T.red, fontWeight: 600 }}>{wr.toFixed(0)}%</span>
-                              <span style={{ color: cP(mm.pnl), fontWeight: 700 }}>{fP(mm.pnl)}</span>
-                              <span style={{ color: cP(mm.usd), fontWeight: 600 }}>{fU(mm.usd)}</span>
-                            </div>
-                          </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                            {monthTrades.map(t => (
-                              <div key={t.id} title={`${t.date} ${t.pair} ${t.direction} ${fP(t.pnl_pct)}`} onClick={() => editTrade(t)} style={{ width: 30, height: 30, borderRadius: 6, ...center, fontSize: 8, fontFamily: mono, fontWeight: 600, cursor: "pointer", background: t.result === "Win" ? T.greenBg : t.result === "Loss" ? T.redBg : T.card, color: t.result === "Win" ? T.green : t.result === "Loss" ? T.red : T.textMid, border: `1px solid ${t.result === "Win" ? T.green + "30" : t.result === "Loss" ? T.red + "30" : T.border}` }}>{t.date.split("-")[2]}</div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                </div>
-              );
-            })() : tab === "monthly" && <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>No monthly data</div>}
 
             {tab === "recap" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -4485,8 +4320,6 @@ function downloadJSON() {
                 {dailySubTab === "monthly" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} lockedPeriodType="month" />}
               </div>
             )}
-
-            {tab === "year" && <YearPage user={user} activeAccount={activeAccount} accountTrades={trades} />}
 
             {tab === "discipline" && <DisciplinePage user={user} />}
 
