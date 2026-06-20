@@ -255,10 +255,10 @@ async function exportDailyPDF({ user, activeAccount, dateISO, dayTrades, plan })
 const emptyTrade = () => ({
   date: new Date().toISOString().split("T")[0],
   session: "London", pair: "EUR/USD", risk: 1, direction: "Long",
-  entry: "", exit: "", rr: "", max_r: "", pnl_pct: "", result: "Win",
+  entry: "", exit: "", rr: "", max_r: "", max_adverse_r: "", pnl_pct: "", result: "Win",
   exec_link: "", bias_link: "",
-  notes_technical: "", notes_fundamental: "", notes_mistakes: "",
-  trade_types: "", tags: "",
+  notes_trade: "", notes_market: "", notes_mistakes: "",
+  trade_types: "",
 });
 
 // Recap = 2 fields: positives (green) + negatives (red).
@@ -996,11 +996,11 @@ function TradeReplayModal({ trade, user, activeAccount, allTrades, onClose, onEd
                 ))}
               </div>
             )}
-            {(trade.tags || "").trim() && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-                {(trade.tags || "").split(",").map(s => s.trim()).filter(Boolean).map(tag => (
-                  <span key={tag} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: T.accentBg, color: T.accent, fontFamily: mono, fontWeight: 600 }}>#{tag}</span>
-                ))}
+            {(trade.max_adverse_r || "").trim() && (
+              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 6 }}>
+                <span style={{ color: T.textLight }}>Max Adverse: </span>
+                <span style={{ color: T.amber, fontWeight: 700 }}>−{trade.max_adverse_r}R</span>
+                <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>went against me before reversing</span>
               </div>
             )}
             {(trade.exec_link || trade.bias_link) && (
@@ -1018,27 +1018,22 @@ function TradeReplayModal({ trade, user, activeAccount, allTrades, onClose, onEd
             <div>
               <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderTop: `3px solid ${T.accent}`, borderRadius: 12, padding: 16 }}>
                 <div style={{ fontSize: 11, color: T.accent, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 12 }}>◆ Trade Notes</div>
-                {trade.notes_technical && (
-                  <div style={{ marginBottom: 12 }}>
-                    {sectionTitle(T.textMid, "Technical")}
-                    {textBlock(trade.notes_technical)}
-                  </div>
-                )}
-                {trade.notes_fundamental && (
-                  <div style={{ marginBottom: 12 }}>
-                    {sectionTitle(T.textMid, "Fundamental")}
-                    {textBlock(trade.notes_fundamental)}
-                  </div>
-                )}
-                {trade.notes_mistakes && (
-                  <div>
-                    {sectionTitle(T.red, "Mistakes")}
-                    {textBlock(trade.notes_mistakes)}
-                  </div>
-                )}
-                {!trade.notes_technical && !trade.notes_fundamental && !trade.notes_mistakes && (
-                  <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic" }}>No trade notes.</div>
-                )}
+                {(() => {
+                  // New schema first, fallback to old fields for legacy trades
+                  const tradeNotes = trade.notes_trade || [trade.notes_technical, trade.notes_fundamental].filter(Boolean).join("\n\n");
+                  const market = trade.notes_market;
+                  const mistakes = trade.notes_mistakes;
+                  if (!tradeNotes && !market && !mistakes) {
+                    return <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic" }}>No trade notes.</div>;
+                  }
+                  return (
+                    <>
+                      {tradeNotes && (<div style={{ marginBottom: 12 }}>{sectionTitle(T.textMid, "Trade Notes")}{textBlock(tradeNotes)}</div>)}
+                      {market && (<div style={{ marginBottom: 12 }}>{sectionTitle(T.blue, "What Happened to the Market")}{textBlock(market)}</div>)}
+                      {mistakes && (<div>{sectionTitle(T.red, "Mistakes")}{textBlock(mistakes)}</div>)}
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
@@ -1431,26 +1426,26 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
         </div>
       )}
 
-      {/* PRE-MARKET — Fundamentals + Technicals in one compact card */}
-      <div style={{ ...cardS, padding: 14, borderTop: `3px solid ${T.blue}` }}>
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, fontFamily: font }}>Fundamentals</div>
+      {/* PRE-MARKET — Fundamentals + Technicals · big editable cards */}
+      <div style={{ ...cardS, padding: 16, borderTop: `3px solid ${T.blue}` }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 6, fontFamily: font }}>Fundamentals</div>
           <textarea
             value={plan.pre_fundamentals}
             onChange={e => updateField("pre_fundamentals", e.target.value)}
             onBlur={handleBlur}
             placeholder="Macro context, data releases, central banks, sentiment, capital flows..."
-            style={{ ...bigTA, minHeight: 130 }}
+            style={{ ...bigTA, minHeight: 240 }}
           />
         </div>
         <div>
-          <div style={{ fontSize: 10, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, fontFamily: font }}>Technicals</div>
+          <div style={{ fontSize: 11, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 6, fontFamily: font }}>Technicals</div>
           <textarea
             value={plan.pre_technicals}
             onChange={e => updateField("pre_technicals", e.target.value)}
             onBlur={handleBlur}
             placeholder="EURUSD: daily broken at 1.0850, watching retest. GBPJPY: trending, pullback to 190.50..."
-            style={{ ...bigTA, minHeight: 130 }}
+            style={{ ...bigTA, minHeight: 240 }}
           />
         </div>
       </div>
@@ -1523,28 +1518,8 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
             </div>
           )}
 
-          {/* What happened — compact, inline */}
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 10, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, fontFamily: font }}>What happened to the market</div>
-            <textarea
-              value={plan.post_what_happened}
-              onChange={e => updateField("post_what_happened", e.target.value)}
-              onBlur={handleBlur}
-              placeholder="USD dumped on weaker CPI. My bullish bias was wrong. Short EURUSD 1.0860, TP 1.0810..."
-              style={{ ...bigTA, minHeight: 110 }}
-            />
-          </div>
-
-          {/* Mistakes — compact, inline */}
-          <div>
-            <div style={{ fontSize: 10, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, fontFamily: font }}>Mistakes</div>
-            <textarea
-              value={plan.post_deviations}
-              onChange={e => updateField("post_deviations", e.target.value)}
-              onBlur={handleBlur}
-              placeholder="Plan said USD longs but I shorted EURUSD. Took 3 trades not 2..."
-              style={{ ...bigTA, minHeight: 90 }}
-            />
+          <div style={{ fontSize: 10, color: T.textLight, fontStyle: "italic", textAlign: "center", padding: "8px 4px", lineHeight: 1.5 }}>
+            Trade notes, market recap, and mistakes are logged per-trade — open any trade to edit.
           </div>
         </div>
       )}
@@ -2747,23 +2722,17 @@ function Journal({ user, onLogout }) {
   const saveTrade = async () => {
     if (!activeAccount) return;
     const pnl = parseFloat(form.pnl_pct) || 0;
-    // Normalize tags: trim, lowercase, dedupe
-    const normalizedTags = (form.tags || "")
-      .split(",")
-      .map(t => t.trim().toLowerCase())
-      .filter(t => t.length > 0)
-      .filter((t, i, arr) => arr.indexOf(t) === i)
-      .join(", ");
     const payload = {
       account_id: activeAccount.id, user_id: user.id,
       date: form.date, day: getDay(form.date), session: form.session, pair: form.pair,
       risk: parseFloat(form.risk) || 0, direction: form.direction,
       entry: form.entry, exit: form.exit, rr: form.rr, max_r: form.max_r,
+      max_adverse_r: form.max_adverse_r || "",
       pnl_pct: pnl, pnl_usd: (pnl / 100) * activeAccount.starting_balance,
       result: form.result,
       exec_link: form.exec_link, bias_link: form.bias_link,
-      notes_technical: form.notes_technical, notes_fundamental: form.notes_fundamental, notes_mistakes: form.notes_mistakes,
-      trade_types: form.trade_types || "", tags: normalizedTags,
+      notes_trade: form.notes_trade || "", notes_market: form.notes_market || "", notes_mistakes: form.notes_mistakes || "",
+      trade_types: form.trade_types || "",
     };
     if (editId) {
       const { data, error } = await supabase.from("trades").update(payload).eq("id", editId).select().single();
@@ -2776,7 +2745,20 @@ function Journal({ user, onLogout }) {
     }
     setForm(emptyTrade()); setShowForm(false); setEditId(null);
   };
-  const editTrade = t => { setForm({ ...t, risk: t.risk || 1, trade_types: t.trade_types || "", tags: t.tags || "" }); setEditId(t.id); setShowForm(true); };
+  const editTrade = t => {
+    setForm({
+      ...t,
+      risk: t.risk || 1,
+      trade_types: t.trade_types || "",
+      // Backward-compat: map old field names to new structure
+      notes_trade: t.notes_trade || [t.notes_technical, t.notes_fundamental].filter(Boolean).join("\n\n") || "",
+      notes_market: t.notes_market || "",
+      notes_mistakes: t.notes_mistakes || "",
+      max_adverse_r: t.max_adverse_r || "",
+    });
+    setEditId(t.id);
+    setShowForm(true);
+  };
   const deleteTrade = async id => {
     if (!confirm("Delete this trade?")) return;
     await supabase.from("trades").delete().eq("id", id);
@@ -3352,33 +3334,40 @@ function downloadJSON() {
                       ))}
                     </div>
                   )}
-                  {/* Tags */}
-                  {(t.tags || "").trim() && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
-                      {(t.tags || "").split(",").map(s => s.trim()).filter(s => s).map(tag => (
-                        <span key={tag} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: T.accentBg, color: T.accent, fontFamily: mono, fontWeight: 600 }}>#{tag}</span>
-                      ))}
+                  {/* Max Adverse R */}
+                  {(t.max_adverse_r || "").toString().trim() && (
+                    <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 8 }}>
+                      <span style={{ color: T.textLight }}>Max Adverse: </span>
+                      <span style={{ color: T.amber, fontWeight: 700 }}>−{t.max_adverse_r}R</span>
+                      <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>against me first</span>
                     </div>
                   )}
-                  {/* Notes */}
-                  {(t.notes_technical || "").trim() && (
-                    <div style={{ marginTop: 6 }}>
-                      <div style={{ fontSize: 9, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>Technical</div>
-                      <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_technical}</div>
-                    </div>
-                  )}
-                  {(t.notes_fundamental || "").trim() && (
-                    <div style={{ marginTop: 6 }}>
-                      <div style={{ fontSize: 9, color: T.purple, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>Fundamental</div>
-                      <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_fundamental}</div>
-                    </div>
-                  )}
-                  {(t.notes_mistakes || "").trim() && (
-                    <div style={{ marginTop: 6 }}>
-                      <div style={{ fontSize: 9, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>Mistakes</div>
-                      <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{t.notes_mistakes}</div>
-                    </div>
-                  )}
+                  {/* Notes — new structure with old-field fallback */}
+                  {(() => {
+                    const tradeNotes = (t.notes_trade || "").trim() || [t.notes_technical, t.notes_fundamental].filter(Boolean).join("\n\n").trim();
+                    const market = (t.notes_market || "").trim();
+                    const mistakes = (t.notes_mistakes || "").trim();
+                    return <>
+                      {tradeNotes && (
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: 9, color: T.accent, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>Trade Notes</div>
+                          <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{tradeNotes}</div>
+                        </div>
+                      )}
+                      {market && (
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: 9, color: T.blue, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>What Happened to the Market</div>
+                          <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{market}</div>
+                        </div>
+                      )}
+                      {mistakes && (
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: 9, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, fontWeight: 700, marginBottom: 3 }}>Mistakes</div>
+                          <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "8px 10px", background: T.card, border: `1px solid ${T.borderLight}`, borderRadius: 6 }}>{mistakes}</div>
+                        </div>
+                      )}
+                    </>;
+                  })()}
                   {/* Links */}
                   {(t.exec_link || t.bias_link) && (
                     <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
@@ -3967,6 +3956,55 @@ function downloadJSON() {
                     </div>
                   )}
 
+                  {/* R-MULTIPLES & WIN PEAK — how far winners actually go vs how much we capture */}
+                  {S.exitQuality && S.exitQuality.n >= 3 && (() => {
+                    const eq = S.exitQuality;
+                    const captureColor = eq.captureRate >= 70 ? T.green : eq.captureRate >= 50 ? T.amber : T.red;
+                    const leftPerTrade = eq.totalLeftOnTable / eq.n;
+                    return (
+                      <div style={{ ...cardS, padding: 18 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>R-Multiples · Win Peak vs Realized</span>
+                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Are you capturing your trades or cutting them?</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
+                          {/* Avg Win Peak (MFE) */}
+                          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.green}`, borderRadius: 10, padding: 14 }}>
+                            <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Avg Win Peak</div>
+                            <div style={{ fontSize: 24, fontWeight: 700, color: T.green, fontFamily: mono, lineHeight: 1.1 }}>{eq.avgMFE >= 0 ? "+" : ""}{eq.avgMFE.toFixed(2)}R</div>
+                            <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 4 }}>how far winners went</div>
+                          </div>
+                          {/* Avg Realized */}
+                          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.accent}`, borderRadius: 10, padding: 14 }}>
+                            <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Avg Captured</div>
+                            <div style={{ fontSize: 24, fontWeight: 700, color: T.accent, fontFamily: mono, lineHeight: 1.1 }}>{eq.avgRealized >= 0 ? "+" : ""}{eq.avgRealized.toFixed(2)}R</div>
+                            <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 4 }}>what you actually closed</div>
+                          </div>
+                          {/* Capture Rate */}
+                          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${captureColor}`, borderRadius: 10, padding: 14 }}>
+                            <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Capture Rate</div>
+                            <div style={{ fontSize: 24, fontWeight: 700, color: captureColor, fontFamily: mono, lineHeight: 1.1 }}>{eq.captureRate.toFixed(0)}%</div>
+                            <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 4 }}>realized / peak</div>
+                          </div>
+                          {/* Left on Table */}
+                          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${T.red}`, borderRadius: 10, padding: 14 }}>
+                            <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Left on Table</div>
+                            <div style={{ fontSize: 24, fontWeight: 700, color: T.red, fontFamily: mono, lineHeight: 1.1 }}>−{leftPerTrade.toFixed(2)}R</div>
+                            <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 4 }}>per trade avg ({eq.totalLeftOnTable.toFixed(1)}R total)</div>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 12, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                          <strong style={{ color: captureColor }}>Read:</strong> {eq.captureRate >= 70
+                            ? "Strong capture — when you're right, you're pressing. Keep doing this."
+                            : eq.captureRate >= 50
+                            ? "Decent capture but room to let runners go further. Try letting 1 trade/week run past your usual TP."
+                            : `You're capturing only ${eq.captureRate.toFixed(0)}% of your move. ${leftPerTrade.toFixed(1)}R left on table per trade. Cutting winners too early is bleeding your edge.`}
+                          {eq.n >= 5 && ` Based on ${eq.n} wins with Max R logged.`}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* TILT DETECTION + PRESSED WINNERS — The two retail killers */}
                   {(S.tilt || S.pressed) && (
                     <div style={{ ...cardS, padding: 18 }}>
@@ -4123,18 +4161,18 @@ function downloadJSON() {
                       {form.result === "Win" && (
                         <Field label="Max R Reached"><input type="text" value={form.max_r} onChange={e => setForm({ ...form, max_r: e.target.value })} placeholder="1:5 or 4" style={inputS} /></Field>
                       )}
+                      <Field label="Max Adverse R"><input type="text" value={form.max_adverse_r} onChange={e => setForm({ ...form, max_adverse_r: e.target.value })} placeholder="0.6 = went 0.6R against me" style={inputS} /></Field>
                       <Field label="PnL %"><input type="number" step="0.01" value={form.pnl_pct} onChange={e => setForm({ ...form, pnl_pct: e.target.value })} style={inputS} /></Field>
                       <Field label="Result"><select value={form.result} onChange={e => { const newResult = e.target.value; setForm({ ...form, result: newResult, max_r: newResult === "Win" ? form.max_r : "" }); }} style={selectS}><option>Win</option><option>Loss</option><option>Breakeven</option></select></Field>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 12 }}>
                       <Field label="Execution Link"><input type="url" value={form.exec_link} onChange={e => setForm({ ...form, exec_link: e.target.value })} placeholder="https://tradingview.com/..." style={inputS} /></Field>
                       <Field label="Bias Link"><input type="url" value={form.bias_link} onChange={e => setForm({ ...form, bias_link: e.target.value })} placeholder="https://..." style={inputS} /></Field>
-                      <Field label="Tags (comma-separated)"><input type="text" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="breakout, news, trend-continuation" style={inputS} /></Field>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginTop: 12 }}>
-                      <Field label="Technical Notes"><textarea value={form.notes_technical} onChange={e => setForm({ ...form, notes_technical: e.target.value })} rows={6} placeholder="Setup, entry trigger, levels..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 130 }} /></Field>
-                      <Field label="Fundamental Notes"><textarea value={form.notes_fundamental} onChange={e => setForm({ ...form, notes_fundamental: e.target.value })} rows={6} placeholder="Macro thesis, news, positioning..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 130 }} /></Field>
-                      <Field label="Mistakes"><textarea value={form.notes_mistakes} onChange={e => setForm({ ...form, notes_mistakes: e.target.value })} rows={6} placeholder="What went wrong, what to improve..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 130 }} /></Field>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12, marginTop: 12 }}>
+                      <Field label="Trade Notes"><textarea value={form.notes_trade} onChange={e => setForm({ ...form, notes_trade: e.target.value })} rows={7} placeholder="Why I took the trade: setup, levels, technical + fundamental thesis, entry trigger..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 160 }} /></Field>
+                      <Field label="What Happened to the Market"><textarea value={form.notes_market} onChange={e => setForm({ ...form, notes_market: e.target.value })} rows={7} placeholder="How the market actually played out: did it reach my targets, reversed at key levels, news caused move..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 160 }} /></Field>
+                      <Field label="Mistakes"><textarea value={form.notes_mistakes} onChange={e => setForm({ ...form, notes_mistakes: e.target.value })} rows={7} placeholder="What went wrong, what to improve, deviations from plan..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 160 }} /></Field>
                     </div>
                     <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                       <button onClick={saveTrade} style={btnP}>{editId ? "Update" : "Save Trade"}</button>
