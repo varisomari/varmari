@@ -996,11 +996,13 @@ function TradeReplayModal({ trade, user, activeAccount, allTrades, onClose, onEd
                 ))}
               </div>
             )}
-            {(trade.max_adverse_r || "").trim() && (
+            {String(trade.max_adverse_r || "").trim() && (
               <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 6 }}>
-                <span style={{ color: T.textLight }}>Max Adverse: </span>
+                <span style={{ color: T.textLight }}>{trade.result === "Loss" ? "Max R against: " : "Max Adverse: "}</span>
                 <span style={{ color: T.amber, fontWeight: 700 }}>−{trade.max_adverse_r}R</span>
-                <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>went against me before reversing</span>
+                <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>
+                  {trade.result === "Loss" ? "how far it went past my stop" : "went against me before working"}
+                </span>
               </div>
             )}
             {(trade.exec_link || trade.bias_link) && (
@@ -3219,7 +3221,32 @@ function downloadJSON() {
       };
     }
 
-    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, avgIntendedR, avgRealizedR, exitQuality, typeStats, tilt, pressed };
+    // ADVERSE R STATS — measure on wins (how lucky) and losses (how wrong)
+    let adverseStats = null;
+    const winsWithAdverse = _trades.filter(t => t.result === "Win" && t.max_adverse_r != null && String(t.max_adverse_r).trim() !== "");
+    const lossesWithAdverse = _trades.filter(t => t.result === "Loss" && t.max_adverse_r != null && String(t.max_adverse_r).trim() !== "");
+    if (winsWithAdverse.length > 0 || lossesWithAdverse.length > 0) {
+      const winAdvR = winsWithAdverse.map(t => parseFloat(t.max_adverse_r) || 0);
+      const lossAdvR = lossesWithAdverse.map(t => parseFloat(t.max_adverse_r) || 0);
+      const avgWinAdverse = winAdvR.length > 0 ? winAdvR.reduce((s, v) => s + v, 0) / winAdvR.length : null;
+      const avgLossAdverse = lossAdvR.length > 0 ? lossAdvR.reduce((s, v) => s + v, 0) / lossAdvR.length : null;
+      const maxWinAdverse = winAdvR.length > 0 ? Math.max(...winAdvR) : null;
+      const maxLossAdverse = lossAdvR.length > 0 ? Math.max(...lossAdvR) : null;
+      // "Lucky" wins: where adverse R was > 0.5 (over half their stop got hit before reversing)
+      const luckyWins = winsWithAdverse.filter(t => (parseFloat(t.max_adverse_r) || 0) > 0.5).length;
+      // "Bias completely wrong" losses: trade went > 1.5R past their stop
+      const veryWrongLosses = lossesWithAdverse.filter(t => (parseFloat(t.max_adverse_r) || 0) > 1.5).length;
+      // Clean stops: loss with adverse ≈ 1.0 (between 0.9 and 1.2)
+      const cleanStops = lossesWithAdverse.filter(t => { const v = parseFloat(t.max_adverse_r) || 0; return v >= 0.9 && v <= 1.2; }).length;
+      adverseStats = {
+        winsN: winsWithAdverse.length, lossesN: lossesWithAdverse.length,
+        avgWinAdverse, avgLossAdverse, maxWinAdverse, maxLossAdverse,
+        luckyWins, veryWrongLosses, cleanStops,
+        totalWins: w.length, totalLosses: l.length,
+      };
+    }
+
+    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, avgIntendedR, avgRealizedR, exitQuality, typeStats, tilt, pressed, adverseStats };
   }, [trades, activeAccount, pairNames, tradeTypes, dashboardPeriod]);
 
   const filtered = useMemo(() => {
@@ -3354,11 +3381,13 @@ function downloadJSON() {
                     </div>
                   )}
                   {/* Max Adverse R */}
-                  {(t.max_adverse_r || "").toString().trim() && (
+                  {String(t.max_adverse_r || "").trim() && (
                     <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginTop: 8 }}>
-                      <span style={{ color: T.textLight }}>Max Adverse: </span>
+                      <span style={{ color: T.textLight }}>{t.result === "Loss" ? "Max R against: " : "Max Adverse: "}</span>
                       <span style={{ color: T.amber, fontWeight: 700 }}>−{t.max_adverse_r}R</span>
-                      <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>against me first</span>
+                      <span style={{ color: T.textLight, marginLeft: 6, fontStyle: "italic" }}>
+                        {t.result === "Loss" ? "past my stop" : "before working"}
+                      </span>
                     </div>
                   )}
                   {/* Notes — new structure with old-field fallback */}
@@ -4024,6 +4053,68 @@ function downloadJSON() {
                     );
                   })()}
 
+                  {/* ADVERSE R ANALYSIS — luck on wins + how wrong on losses */}
+                  {S.adverseStats && (() => {
+                    const a = S.adverseStats;
+                    const winLuckColor = a.avgWinAdverse == null ? T.textMid : a.avgWinAdverse < 0.3 ? T.green : a.avgWinAdverse < 0.6 ? T.amber : T.red;
+                    const lossBiasColor = a.avgLossAdverse == null ? T.textMid : a.avgLossAdverse <= 1.1 ? T.green : a.avgLossAdverse <= 1.5 ? T.amber : T.red;
+                    const luckyPct = a.winsN > 0 ? (a.luckyWins / a.winsN) * 100 : 0;
+                    const veryWrongPct = a.lossesN > 0 ? (a.veryWrongLosses / a.lossesN) * 100 : 0;
+                    return (
+                      <div style={{ ...cardS, padding: 18 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Adverse R · Lucky Wins & Bias Quality</span>
+                          <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>How close I came to wrong / how wrong I was</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                          {/* WINS — how lucky */}
+                          {a.avgWinAdverse != null && (
+                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${winLuckColor}`, borderRadius: 10, padding: 14 }}>
+                              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>On Wins · How Lucky</div>
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+                                <div style={{ fontSize: 24, fontWeight: 700, color: winLuckColor, fontFamily: mono, lineHeight: 1.1 }}>−{a.avgWinAdverse.toFixed(2)}R</div>
+                                <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>avg adverse</div>
+                              </div>
+                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 8 }}>
+                                Max went: <strong style={{ color: T.text }}>{a.maxWinAdverse != null ? `−${a.maxWinAdverse.toFixed(2)}R` : "—"}</strong> · {a.winsN}/{a.totalWins} wins logged
+                              </div>
+                              <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, padding: "6px 8px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                                {a.avgWinAdverse < 0.3
+                                  ? <><strong style={{ color: T.green }}>Clean entries.</strong> Your wins barely went against you — good timing.</>
+                                  : a.avgWinAdverse < 0.6
+                                  ? <><strong style={{ color: T.amber }}>Decent.</strong> Some wins threatened your stop. Sharpen entries.</>
+                                  : <><strong style={{ color: T.red }}>You're getting lucky.</strong> {luckyPct.toFixed(0)}% of wins ({a.luckyWins}/{a.winsN}) almost stopped out first. One day they won't reverse.</>}
+                              </div>
+                            </div>
+                          )}
+                          {/* LOSSES — how wrong */}
+                          {a.avgLossAdverse != null && (
+                            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${lossBiasColor}`, borderRadius: 10, padding: 14 }}>
+                              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>On Losses · How Wrong</div>
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+                                <div style={{ fontSize: 24, fontWeight: 700, color: lossBiasColor, fontFamily: mono, lineHeight: 1.1 }}>−{a.avgLossAdverse.toFixed(2)}R</div>
+                                <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>avg past stop</div>
+                              </div>
+                              <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 8 }}>
+                                Worst went: <strong style={{ color: T.text }}>{a.maxLossAdverse != null ? `−${a.maxLossAdverse.toFixed(2)}R` : "—"}</strong> · {a.lossesN}/{a.totalLosses} losses logged
+                              </div>
+                              <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, padding: "6px 8px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                                {a.avgLossAdverse <= 1.1
+                                  ? <><strong style={{ color: T.green }}>Clean stops.</strong> Losses stop at the stop — your levels are right.</>
+                                  : a.avgLossAdverse <= 1.5
+                                  ? <><strong style={{ color: T.amber }}>Stops barely held.</strong> Trades went a bit further past your stop on average.</>
+                                  : <><strong style={{ color: T.red }}>Bias was wrong.</strong> {veryWrongPct.toFixed(0)}% of losses ({a.veryWrongLosses}/{a.lossesN}) went 1.5R+ past your stop. Wrong direction entirely, not just bad timing.</>}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 12, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                          <strong style={{ color: T.amber }}>Read:</strong> Adverse R on wins {"<"} 0.5 = your entries are sharp. Adverse R on losses {">"} 1.5 = your bias was completely backwards, not just timing. Fill in <strong>Max R Against</strong> on every trade for this to matter.
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* TILT DETECTION + PRESSED WINNERS — The two retail killers */}
                   {(S.tilt || S.pressed) && (
                     <div style={{ ...cardS, padding: 18 }}>
@@ -4180,7 +4271,7 @@ function downloadJSON() {
                       {form.result === "Win" && (
                         <Field label="Max R Reached"><input type="text" value={form.max_r} onChange={e => setForm({ ...form, max_r: e.target.value })} placeholder="1:5 or 4" style={inputS} /></Field>
                       )}
-                      <Field label="Max Adverse R"><input type="text" value={form.max_adverse_r} onChange={e => setForm({ ...form, max_adverse_r: e.target.value })} placeholder="0.6 = went 0.6R against me" style={inputS} /></Field>
+                      <Field label={form.result === "Loss" ? "Max R Against (how far past stop)" : "Max Adverse R (peak against me)"}><input type="text" value={form.max_adverse_r} onChange={e => setForm({ ...form, max_adverse_r: e.target.value })} placeholder={form.result === "Loss" ? "5 = trade went 5R against me past my stop" : "0.6 = went 0.6R against me before working"} style={inputS} /></Field>
                       <Field label="PnL %"><input type="number" step="0.01" value={form.pnl_pct} onChange={e => setForm({ ...form, pnl_pct: e.target.value })} style={inputS} /></Field>
                       <Field label="Result"><select value={form.result} onChange={e => { const newResult = e.target.value; setForm({ ...form, result: newResult, max_r: newResult === "Win" ? form.max_r : "" }); }} style={selectS}><option>Win</option><option>Loss</option><option>Breakeven</option></select></Field>
                     </div>
@@ -4225,7 +4316,7 @@ function downloadJSON() {
                 <div style={{ ...cardS, overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono }}>
                     <thead><tr style={{ background: T.cardAlt }}>
-                      {[{ k: "date", l: "Date" }, { k: "day", l: "Day" }, { k: "session", l: "Session" }, { k: "pair", l: "Pair" }, { k: "direction", l: "Dir" }, { k: "risk", l: "Risk" }, { k: "entry", l: "Entry" }, { k: "exit", l: "Exit" }, { k: "rr", l: "R:R" }, { k: "max_r", l: "Max R" }, { k: "pnl_pct", l: "PnL" }, { k: "result", l: "Result" }].map(c => (
+                      {[{ k: "date", l: "Date" }, { k: "day", l: "Day" }, { k: "session", l: "Session" }, { k: "pair", l: "Pair" }, { k: "direction", l: "Dir" }, { k: "risk", l: "Risk" }, { k: "entry", l: "Entry" }, { k: "exit", l: "Exit" }, { k: "rr", l: "R:R" }, { k: "max_r", l: "Max R" }, { k: "max_adverse_r", l: "Adv R" }, { k: "pnl_pct", l: "PnL" }, { k: "result", l: "Result" }].map(c => (
                         <th key={c.k} onClick={() => toggleSort(c.k)} style={{ textAlign: "left", padding: "10px 7px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", borderBottom: `1px solid ${T.border}`, fontFamily: mono }}>{c.l}{sortCol === c.k ? (sortDir === "asc" ? " ↑" : " ↓") : ""}</th>
                       ))}
                       <th style={{ padding: "10px 7px", color: T.textLight, fontSize: 9, borderBottom: `1px solid ${T.border}`, fontFamily: mono }}>LINKS</th>
@@ -4285,7 +4376,7 @@ function downloadJSON() {
 
                             rows.push(
                               <tr key={"hdr-" + g.key} style={{ background: T.cardAlt, borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
-                                <td colSpan={14} style={{ padding: "10px 12px", color: T.text, fontFamily: mono, fontSize: 11, letterSpacing: 0.5 }}>
+                                <td colSpan={15} style={{ padding: "10px 12px", color: T.text, fontFamily: mono, fontSize: 11, letterSpacing: 0.5 }}>
                                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                                     <span style={{ fontWeight: 700 }}>
                                       {groupBy === "week" ? "📅 " : "🗓️ "}{labelFor(g.key)}
@@ -4318,6 +4409,23 @@ function downloadJSON() {
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.exit}</td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.rr || "—"}</td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: t.result === "Win" && t.max_r ? T.green : T.textLight }}>{t.result === "Win" ? (t.max_r || "—") : "—"}</td>
+                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>
+                                  {(() => {
+                                    const v = parseFloat(t.max_adverse_r);
+                                    if (isNaN(v) || String(t.max_adverse_r || "").trim() === "") return <span style={{ color: T.textLight }}>—</span>;
+                                    // Color by sentiment: lower adverse = better
+                                    // On wins: low = clean entry. On losses: 1.0 = clean stop, > 1.5 = wrong bias
+                                    let color;
+                                    if (t.result === "Win") {
+                                      color = v < 0.3 ? T.green : v < 0.6 ? T.amber : T.red;
+                                    } else if (t.result === "Loss") {
+                                      color = v <= 1.1 ? T.green : v <= 1.5 ? T.amber : T.red;
+                                    } else {
+                                      color = T.textMid;
+                                    }
+                                    return <span style={{ color, fontWeight: 600 }}>−{v.toFixed(2)}R</span>;
+                                  })()}
+                                </td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600 }}>
                                   <span style={{ color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span><br />
                                   <span style={{ fontSize: 9, color: T.textLight }}>{fU(t.pnl_usd)}</span>
