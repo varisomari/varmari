@@ -22,11 +22,11 @@ const DAYS_W = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
 const BIAS_TYPES = ["Transition","Re-Transition","Confirmation","Continuation","None"];
 
 const T = {
-  bg: "#FBFAF6", card: "#FFFFFF", cardAlt: "#FAFAF7", border: "#E8E2D5",
-  borderLight: "#F0EDE3", text: "#1A1A1A", textMid: "#6B6557", textLight: "#A8A293",
-  accent: "#C97140", accentBg: "#FCF7EF", green: "#1F7A48", greenBg: "#ECF7F0",
-  red: "#B73A2C", redBg: "#FBEEEC", blue: "#2563EB", blueBg: "#EFF4FF",
-  purple: "#7C3AED", purpleBg: "#F3EEFF", amber: "#B45309", amberBg: "#FEF9E8",
+  bg: "#FBFAF6", card: "#FFFFFF", cardAlt: "#FAF8F4", border: "#E8E2D5",
+  borderLight: "#F0EAD9", text: "#2C2418", textMid: "#6B5D4F", textLight: "#9C8E7E",
+  accent: "#C97140", accentBg: "#FDF0E5", green: "#1F7A48", greenBg: "#E8F5EE",
+  red: "#B73A2C", redBg: "#FDF0EF", blue: "#2563EB", blueBg: "#DBEAFE",
+  purple: "#7C3AED", purpleBg: "#F3E8FF", amber: "#B45309", amberBg: "#FEF9E8",
   headerBg: "#FFFFFF",
 };
 const font = `'Inter', -apple-system, 'SF Pro Display', system-ui, sans-serif`;
@@ -55,15 +55,6 @@ const realizedR = (t) => {
   const pnl = parseFloat(t.pnl_pct);
   if (!risk || isNaN(pnl)) return null;
   return pnl / risk;
-};
-
-// Adherence score: ticked checklist items / total. Returns null if user has no rules defined.
-const computeAdherence = (trade, checklistItems) => {
-  if (!checklistItems || checklistItems.length === 0) return null;
-  const checks = trade.adherence_checks || {};
-  let ticked = 0;
-  checklistItems.forEach(c => { if (checks[c.id] === true) ticked++; });
-  return { ticked, total: checklistItems.length, pct: (ticked / checklistItems.length) * 100 };
 };
 
 const pad2 = n => String(n).padStart(2, "0");
@@ -135,11 +126,22 @@ async function exportDailyPDF({ user, activeAccount, dateISO, dayTrades, plan })
     pnlUsd: trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0),
   } : null;
 
-  const tradesHTML = trades.map(t => {
+  const tradesHTML = trades.map((t, idx) => {
     const pnlPct = parseFloat(t.pnl_pct) || 0;
     const pnlUsd = parseFloat(t.pnl_usd) || 0;
     const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
+    const noteBody = (t.notes_trade || "").trim() || [t.notes_technical, t.notes_fundamental].filter(Boolean).join("\n\n").trim();
+    const mistakes = (t.notes_mistakes || "").trim();
+    const dInT = (function () {
+      if (!t.date) return null;
+      const s = parseLocalDate(String(t.date).slice(0, 10));
+      const e = t.exit_date ? parseLocalDate(String(t.exit_date).slice(0, 10)) : s;
+      if (!s || !e) return null;
+      const days = Math.floor((e - s) / 86400000) + 1;
+      return days < 1 ? 1 : days;
+    })();
     return `<tr>
+      <td class="mono">#${idx + 1}</td>
       <td class="mono">${esc(t.session)}</td>
       <td class="mono"><strong>${esc(t.pair)}</strong></td>
       <td><span class="pill pill-${t.direction === "Long" ? "long" : "short"}">${esc(t.direction)}</span></td>
@@ -149,8 +151,12 @@ async function exportDailyPDF({ user, activeAccount, dateISO, dayTrades, plan })
       <td class="mono">${esc(t.rr || "—")}R</td>
       <td class="mono pnl ${pnlPct >= 0 ? "pos" : "neg"}">${pnlPct >= 0 ? "+" : "−"}${Math.abs(pnlPct).toFixed(2)}%</td>
       <td class="mono pnl ${pnlUsd >= 0 ? "pos" : "neg"}">${pnlUsd >= 0 ? "+" : "−"}$${Math.abs(pnlUsd).toFixed(0)}</td>
+      <td class="mono" style="font-size:7.5pt;color:#6B5D4F">${dInT ? `${dInT}d` : "—"}${t.conviction ? ` · C${t.conviction}` : ""}</td>
       <td class="types">${types.map(tt => `<span class="type-pill">${esc(tt)}</span>`).join("")}</td>
-    </tr>`;
+    </tr>${noteBody || mistakes ? `<tr class="notes-row"><td colspan="12" style="padding:6px 8px 10px 8px;background:#FAF8F4;border-bottom:1px solid #E8E2D5">
+      ${noteBody ? `<div style="margin-bottom:${mistakes ? "6px" : "0"}"><span style="font-size:7pt;letter-spacing:1px;text-transform:uppercase;color:#7C3AED;font-weight:700">Trade #${idx + 1} · Notes</span><div style="font-size:9pt;white-space:pre-wrap;line-height:1.45;color:#2C2418;margin-top:2px">${esc(noteBody)}</div></div>` : ""}
+      ${mistakes ? `<div><span style="font-size:7pt;letter-spacing:1px;text-transform:uppercase;color:#B73A2C;font-weight:700">Trade #${idx + 1} · Mistakes</span><div style="font-size:9pt;white-space:pre-wrap;line-height:1.45;color:#2C2418;margin-top:2px">${esc(mistakes)}</div></div>` : ""}
+    </td></tr>` : ""}`;
   }).join("");
 
   const html = `<!DOCTYPE html>
@@ -165,14 +171,14 @@ async function exportDailyPDF({ user, activeAccount, dateISO, dayTrades, plan })
   .header .date { font-size: 10pt; color: #6B5D4F; font-family: 'Courier New', monospace; }
   .section { margin-bottom: 9px; page-break-inside: avoid; }
   .section-title { font-size: 8pt; letter-spacing: 1.5px; text-transform: uppercase; color: #C97140; margin: 0 0 4px 0; font-weight: 700; }
-  .section-body { font-size: 9.5pt; white-space: pre-wrap; padding: 6px 8px; background: #FAF8F4; border-left: 3px solid #E8E0D4; border-radius: 2px; line-height: 1.5; }
+  .section-body { font-size: 9.5pt; white-space: pre-wrap; padding: 6px 8px; background: #FAF8F4; border-left: 3px solid #E8E2D5; border-radius: 2px; line-height: 1.5; }
   .pre-block { border-left-color: #2563EB; }
   .post-block { border-left-color: #7C3AED; }
   .mistakes-block { border-left-color: #B73A2C; background: #FDF0EF; }
   .empty { color: #9C8E7E; font-style: italic; font-size: 9pt; }
   table.trades { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-top: 4px; }
-  table.trades th { text-align: left; padding: 4px 5px; background: #FAF8F4; border-bottom: 1px solid #E8E0D4; font-weight: 700; color: #6B5D4F; text-transform: uppercase; font-size: 7.5pt; letter-spacing: 0.5px; }
-  table.trades td { padding: 4px 5px; border-bottom: 1px solid #F0E8DA; }
+  table.trades th { text-align: left; padding: 4px 5px; background: #FAF8F4; border-bottom: 1px solid #E8E2D5; font-weight: 700; color: #6B5D4F; text-transform: uppercase; font-size: 7.5pt; letter-spacing: 0.5px; }
+  table.trades td { padding: 4px 5px; border-bottom: 1px solid #F0EAD9; }
   .mono { font-family: 'Courier New', monospace; }
   .pill { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 7.5pt; font-weight: 700; font-family: 'Courier New', monospace; }
   .pill-long, .pill-win { background: #E8F5EE; color: #1F7A48; }
@@ -185,7 +191,7 @@ async function exportDailyPDF({ user, activeAccount, dateISO, dayTrades, plan })
   .stat-bar span { color: #6B5D4F; }
   .stat-bar strong { color: #2C2418; }
   .no-trade { padding: 12px; text-align: center; background: #FAF8F4; border-radius: 4px; color: #6B5D4F; font-style: italic; font-size: 9.5pt; }
-  .footer { margin-top: 14px; padding-top: 6px; border-top: 1px solid #E8E0D4; font-size: 7.5pt; color: #9C8E7E; font-family: 'Courier New', monospace; text-align: center; }
+  .footer { margin-top: 14px; padding-top: 6px; border-top: 1px solid #E8E2D5; font-size: 7.5pt; color: #9C8E7E; font-family: 'Courier New', monospace; text-align: center; }
   @media print { body { padding: 0; } .page { max-width: 100%; } }
 </style></head><body>
 <div class="page">
@@ -224,20 +230,10 @@ async function exportDailyPDF({ user, activeAccount, dateISO, dayTrades, plan })
     ` : ""}
     ${trades.length > 0 ? `
     <table class="trades">
-      <thead><tr><th>Session</th><th>Pair</th><th>Dir</th><th>Result</th><th>Entry</th><th>Exit</th><th>R:R</th><th>P&amp;L %</th><th>P&amp;L $</th><th>Types</th></tr></thead>
+      <thead><tr><th>#</th><th>Session</th><th>Pair</th><th>Dir</th><th>Result</th><th>Entry</th><th>Exit</th><th>R:R</th><th>P&amp;L %</th><th>P&amp;L $</th><th>Held/C</th><th>Types</th></tr></thead>
       <tbody>${tradesHTML}</tbody>
     </table>
     ` : '<div class="empty">No trades logged for this day.</div>'}
-  </div>
-
-  <div class="section">
-    <div class="section-title">What happened to the market</div>
-    <div class="section-body post-block">${(p.post_what_happened || "").trim() ? esc(p.post_what_happened) : '<span class="empty">Not yet written.</span>'}</div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">Mistakes</div>
-    <div class="section-body mistakes-block">${(p.post_deviations || "").trim() ? esc(p.post_deviations) : '<span class="empty">No mistakes logged.</span>'}</div>
   </div>
   ` : ""}
 
@@ -253,13 +249,28 @@ async function exportDailyPDF({ user, activeAccount, dateISO, dayTrades, plan })
 }
 
 const emptyTrade = () => ({
-  date: new Date().toISOString().split("T")[0],
+  date: isoDate(new Date()),
+  exit_date: "",
   session: "London", pair: "EUR/USD", risk: 1, direction: "Long",
   entry: "", exit: "", rr: "", max_r: "", max_adverse_r: "", pnl_pct: "", result: "Win",
   exec_link: "", bias_link: "",
   notes_trade: "", notes_market: "", notes_mistakes: "",
   trade_types: "",
+  conviction: 3,
 });
+
+// Days-in-trade (inclusive of both endpoints). Same-day trade = 1.
+const daysInTrade = (t) => {
+  if (!t || !t.date) return null;
+  const startISO = String(t.date).slice(0, 10);
+  const endISO = t.exit_date ? String(t.exit_date).slice(0, 10) : startISO;
+  const s = parseLocalDate(startISO);
+  const e = parseLocalDate(endISO);
+  if (!s || !e) return null;
+  const ms = e - s;
+  const days = Math.floor(ms / 86400000) + 1;
+  return days < 1 ? 1 : days;
+};
 
 // Recap = 2 fields: positives (green) + negatives (red).
 // Mapped to existing DB columns: positives → worked_text, negatives → didnt_work_text
@@ -937,6 +948,70 @@ function TradeReplayModal({ trade, user, activeAccount, allTrades, onClose, onEd
 
   const dayLabel = parseLocalDate(trade.date).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
+  const printTrade = () => {
+    const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
+    const pnlPct = parseFloat(trade.pnl_pct) || 0;
+    const pnlUsd = parseFloat(trade.pnl_usd) || 0;
+    const dInT = daysInTrade(trade);
+    const types = (trade.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
+    const noteBody = (trade.notes_trade || "").trim() || [trade.notes_technical, trade.notes_fundamental].filter(Boolean).join("\n\n").trim();
+    const mistakes = (trade.notes_mistakes || "").trim();
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Trade · ${esc(trade.pair)} · ${esc(trade.date)}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font-family: -apple-system, 'Segoe UI', Helvetica, sans-serif; color: #2C2418; margin: 0; padding: 0; line-height: 1.5; font-size: 10.5pt; }
+  .page { max-width: 180mm; margin: 0 auto; }
+  .header { padding-bottom: 10px; border-bottom: 2px solid #C97140; margin-bottom: 14px; }
+  h1 { font-size: 16pt; margin: 0 0 4px 0; }
+  .sub { font-size: 10pt; color: #6B5D4F; font-family: 'Courier New', monospace; }
+  .big-pnl { font-size: 26pt; font-weight: 700; letter-spacing: -0.5px; margin: 8px 0; }
+  .pos { color: #1F7A48; } .neg { color: #B73A2C; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 20px; font-size: 10pt; font-family: 'Courier New', monospace; margin-bottom: 14px; padding: 10px 12px; background: #FAF8F4; border-radius: 4px; }
+  .grid .k { color: #6B5D4F; }
+  .grid .v { font-weight: 600; }
+  .section { margin-bottom: 12px; page-break-inside: avoid; }
+  .section-title { font-size: 8pt; letter-spacing: 1.5px; text-transform: uppercase; color: #C97140; margin: 0 0 4px 0; font-weight: 700; }
+  .section-body { font-size: 10pt; white-space: pre-wrap; padding: 8px 10px; background: #FAF8F4; border-left: 3px solid #E8E2D5; border-radius: 2px; line-height: 1.55; }
+  .mistakes { border-left-color: #B73A2C; background: #FDF0EF; }
+  .empty { color: #9C8E7E; font-style: italic; }
+  .type-pill { display: inline-block; background: #F3E8FF; color: #7C3AED; padding: 2px 8px; border-radius: 4px; margin: 0 4px 4px 0; font-weight: 600; font-size: 9pt; }
+  .footer { margin-top: 14px; padding-top: 6px; border-top: 1px solid #E8E2D5; font-size: 7.5pt; color: #9C8E7E; font-family: 'Courier New', monospace; text-align: center; }
+</style></head><body>
+<div class="page">
+  <div class="header">
+    <h1>${esc(trade.pair)} · ${esc(trade.direction)} · ${esc(trade.result)}</h1>
+    <div class="sub">${esc(trade.date)}${trade.exit_date && trade.exit_date !== trade.date ? ` → ${esc(trade.exit_date)}` : ""} · ${esc(trade.session)}</div>
+    <div class="big-pnl ${pnlPct >= 0 ? "pos" : "neg"}">${pnlPct >= 0 ? "+" : "−"}${Math.abs(pnlPct).toFixed(2)}% · ${pnlUsd >= 0 ? "+" : "−"}$${Math.abs(pnlUsd).toFixed(2)}</div>
+    ${types.length ? `<div>${types.map(t => `<span class="type-pill">${esc(t)}</span>`).join("")}</div>` : ""}
+  </div>
+  <div class="grid">
+    <div class="k">Risk:</div><div class="v">${esc(trade.risk)}%</div>
+    <div class="k">R:R at close:</div><div class="v">${esc(trade.rr || "—")}</div>
+    <div class="k">Entry:</div><div class="v">${esc(trade.entry || "—")}</div>
+    <div class="k">Exit:</div><div class="v">${esc(trade.exit || "—")}</div>
+    ${trade.result === "Win" ? `<div class="k">Max R Reached:</div><div class="v">${esc(trade.max_r || "—")}</div>` : ""}
+    ${trade.result === "Loss" ? `<div class="k">Max R Reversed:</div><div class="v">${esc(trade.max_adverse_r || "—")}</div>` : ""}
+    ${dInT ? `<div class="k">Held:</div><div class="v">${dInT} ${dInT === 1 ? "day" : "days"}</div>` : ""}
+    ${trade.conviction ? `<div class="k">Conviction:</div><div class="v">${esc(trade.conviction)}/5</div>` : ""}
+  </div>
+  <div class="section">
+    <div class="section-title">Trade Notes — Setup, Thesis, What Happened</div>
+    <div class="section-body">${noteBody ? esc(noteBody) : '<span class="empty">No notes.</span>'}</div>
+  </div>
+  ${mistakes ? `<div class="section">
+    <div class="section-title">Mistakes</div>
+    <div class="section-body mistakes">${esc(mistakes)}</div>
+  </div>` : ""}
+  <div class="footer">Varmari · Generated ${new Date().toLocaleString()}</div>
+</div>
+<script>setTimeout(() => window.print(), 250);</script>
+</body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) { alert("Pop-up blocked — please allow popups for this site."); return; }
+    w.document.write(html); w.document.close();
+  };
+
   const fmtP = (n) => `${n >= 0 ? "+" : "−"}${Math.abs(parseFloat(n) || 0).toFixed(2)}%`;
   const fmtU = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(parseFloat(n) || 0).toFixed(2)}`;
   const pnlColor = (parseFloat(trade.pnl_pct) || 0) >= 0 ? T.green : T.red;
@@ -959,6 +1034,7 @@ function TradeReplayModal({ trade, user, activeAccount, allTrades, onClose, onEd
               <span style={{ fontSize: 11, color: T.textMid }}>{dayLabel}</span>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={printTrade} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: T.accent, borderColor: T.accent + "60" }}>⏷ Print</button>
               <button onClick={() => { onEdit(trade); onClose(); }} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: T.amber, borderColor: T.amber + "60" }}>✎ Edit</button>
               <button onClick={onClose} style={btnG}>✕</button>
             </div>
@@ -987,6 +1063,14 @@ function TradeReplayModal({ trade, user, activeAccount, allTrades, onClose, onEd
                 <span style={{ color: T.textLight }}>Exit:</span><span>{trade.exit || "—"}</span>
                 <span style={{ color: T.textLight }}>R:R:</span><span>{trade.rr || "—"}</span>
                 {trade.result === "Win" && (<><span style={{ color: T.textLight }}>Max R:</span><span>{trade.max_r || "—"}</span></>)}
+                {(() => {
+                  const d = daysInTrade(trade);
+                  if (!d) return null;
+                  return (<><span style={{ color: T.textLight }}>Held:</span><span>{d} {d === 1 ? "day" : "days"}{trade.exit_date && trade.exit_date !== trade.date ? ` (→ ${trade.exit_date})` : ""}</span></>);
+                })()}
+                {trade.conviction != null && trade.conviction !== "" && (
+                  <><span style={{ color: T.textLight }}>Conviction:</span><span style={{ color: T.accent, fontWeight: 700 }}>{"●".repeat(Number(trade.conviction))}{"○".repeat(Math.max(0, 5 - Number(trade.conviction)))} {trade.conviction}/5</span></>
+                )}
               </div>
             </div>
             {(trade.trade_types || "").trim() && (
@@ -1539,6 +1623,241 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
 }
 
 // ══════════════════════════════════════════
+// MISSED TRADES — trades you planned but did not take
+// The fear/hesitation ledger. Reviewing these reveals what you're
+// systematically avoiding vs what you legitimately skipped.
+// ══════════════════════════════════════════
+function MissedTradesPage({ user, activeAccount }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const emptyForm = () => ({
+    date: isoDate(new Date()),
+    pair: "EUR/USD", session: "London", direction: "Long",
+    setup_notes: "", reason_missed: "", estimated_r: "",
+  });
+  const [form, setForm] = useState(emptyForm());
+  const [filterYear, setFilterYear] = useState("all");
+
+  useEffect(() => {
+    if (!activeAccount) return;
+    let cancelled = false;
+    setLoading(true);
+    supabase.from("missed_trades")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("account_id", activeAccount.id)
+      .order("date", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error && /relation .* does not exist/i.test(error.message || "")) {
+          setItems([]);
+        } else {
+          setItems(data || []);
+        }
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [user.id, activeAccount?.id]);
+
+  const save = async () => {
+    if (!activeAccount) return;
+    const payload = {
+      user_id: user.id, account_id: activeAccount.id,
+      date: form.date, pair: form.pair, session: form.session, direction: form.direction,
+      setup_notes: form.setup_notes || "", reason_missed: form.reason_missed || "",
+      estimated_r: form.estimated_r || "",
+    };
+    if (editId) {
+      const { data, error } = await supabase.from("missed_trades").update(payload).eq("id", editId).select().single();
+      if (error) { alert("Update failed: " + error.message + "\n\nIf this mentions a missing table, run the SQL migration in Supabase first."); return; }
+      setItems(p => p.map(x => x.id === editId ? data : x));
+    } else {
+      const { data, error } = await supabase.from("missed_trades").insert(payload).select().single();
+      if (error) { alert("Save failed: " + error.message + "\n\nIf this mentions a missing table, run the SQL migration in Supabase first."); return; }
+      setItems(p => [data, ...p]);
+    }
+    setForm(emptyForm()); setShowForm(false); setEditId(null);
+  };
+
+  const remove = async (id) => {
+    if (!confirm("Delete this missed trade entry?")) return;
+    await supabase.from("missed_trades").delete().eq("id", id);
+    setItems(p => p.filter(x => x.id !== id));
+  };
+
+  const edit = (m) => {
+    setForm({
+      date: m.date, pair: m.pair, session: m.session || "London", direction: m.direction || "Long",
+      setup_notes: m.setup_notes || "", reason_missed: m.reason_missed || "",
+      estimated_r: m.estimated_r || "",
+    });
+    setEditId(m.id); setShowForm(true);
+  };
+
+  // Aggregate reasons for reflection
+  const reasonBuckets = useMemo(() => {
+    const map = {};
+    items.forEach(m => {
+      const key = (m.reason_missed || "").trim().toLowerCase();
+      if (!key) return;
+      // Group by first word for a rough bucket
+      const bucket = key.split(/\s+/).slice(0, 3).join(" ");
+      map[bucket] = (map[bucket] || 0) + 1;
+    });
+    return Object.entries(map).map(([k, v]) => ({ reason: k, n: v })).sort((a, b) => b.n - a.n).slice(0, 6);
+  }, [items]);
+
+  const years = useMemo(() => {
+    const set = new Set(items.map(m => (m.date || "").slice(0, 4)).filter(Boolean));
+    return Array.from(set).sort().reverse();
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    if (filterYear === "all") return items;
+    return items.filter(m => (m.date || "").startsWith(filterYear));
+  }, [items, filterYear]);
+
+  const totalEstR = useMemo(() => {
+    return filtered.reduce((s, m) => {
+      const v = parseFloat(m.estimated_r);
+      return isNaN(v) ? s : s + v;
+    }, 0);
+  }, [filtered]);
+
+  const printPage = () => window.print();
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Header */}
+      <div style={{ ...cardS, padding: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 4 }}>Missed Trades</div>
+            <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>Trades you planned but didn't take — the hesitation ledger.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select value={filterYear} onChange={e => setFilterYear(e.target.value)} style={{ ...selectS, width: "auto", padding: "6px 10px" }}>
+              <option value="all">All years</option>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <button onClick={printPage} className="no-print" style={{ ...btnG, fontSize: 11 }}>⏷ Print</button>
+            <button onClick={() => { setForm(emptyForm()); setEditId(null); setShowForm(true); }} className="no-print" style={{ ...btnP, fontSize: 12 }}>+ Log Missed Trade</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary strip */}
+      {items.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+          <div style={{ ...cardS, padding: 14 }}>
+            <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Total Missed</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: T.text, fontFamily: mono }}>{filtered.length}</div>
+          </div>
+          <div style={{ ...cardS, padding: 14 }}>
+            <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Est. R Not Taken</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: totalEstR >= 0 ? T.green : T.red, fontFamily: mono }}>
+              {totalEstR >= 0 ? "+" : ""}{totalEstR.toFixed(1)}R
+            </div>
+          </div>
+          {reasonBuckets.length > 0 && (
+            <div style={{ ...cardS, padding: 14, gridColumn: "span 2" }}>
+              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>Top Reasons for Missing</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {reasonBuckets.map(r => (
+                  <span key={r.reason} style={{ fontSize: 11, padding: "3px 10px", background: T.amberBg, color: T.amber, borderRadius: 12, fontWeight: 600, fontFamily: mono }}>
+                    {r.reason} · {r.n}×
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Form (inline card, not a modal) */}
+      {showForm && (
+        <div className="no-print" style={{ ...cardS, padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, alignItems: "center" }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{editId ? "Edit Missed Trade" : "New Missed Trade"}</span>
+            <button onClick={() => { setShowForm(false); setEditId(null); setForm(emptyForm()); }} style={btnG}>✕</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 }}>
+            <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inputS} /></Field>
+            <Field label="Session"><select value={form.session} onChange={e => setForm({ ...form, session: e.target.value })} style={selectS}>{SESSIONS.map(s => <option key={s}>{s}</option>)}</select></Field>
+            <Field label="Pair"><input type="text" value={form.pair} onChange={e => setForm({ ...form, pair: e.target.value })} style={inputS} /></Field>
+            <Field label="Direction"><select value={form.direction} onChange={e => setForm({ ...form, direction: e.target.value })} style={selectS}><option>Long</option><option>Short</option></select></Field>
+            <Field label="Est. R (would have been)"><input type="text" value={form.estimated_r} onChange={e => setForm({ ...form, estimated_r: e.target.value })} placeholder="e.g. 2.5 or -1" style={inputS} /></Field>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10, marginBottom: 12 }}>
+            <Field label="Setup Notes (what was the plan)">
+              <textarea value={form.setup_notes} onChange={e => setForm({ ...form, setup_notes: e.target.value })} style={{ ...inputS, minHeight: 100, fontFamily: font, resize: "vertical" }} />
+            </Field>
+            <Field label="Reason for Missing (be honest)">
+              <textarea value={form.reason_missed} onChange={e => setForm({ ...form, reason_missed: e.target.value })} style={{ ...inputS, minHeight: 100, fontFamily: font, resize: "vertical" }} placeholder="fear / distracted / oversized prev loss / etc." />
+            </Field>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button onClick={() => { setShowForm(false); setEditId(null); setForm(emptyForm()); }} style={btnG}>Cancel</button>
+            <button onClick={save} style={btnP}>{editId ? "Update" : "Save"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      {loading ? (
+        <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight }}>Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ ...cardS, padding: 40, textAlign: "center", color: T.textLight, fontSize: 13 }}>
+          {items.length === 0 ? "No missed trades logged yet. When you see a setup and don't take it — log it here." : "Nothing in this year."}
+        </div>
+      ) : (
+        <div style={{ ...cardS, padding: 0 }}>
+          {filtered.map((m, i) => {
+            const estR = parseFloat(m.estimated_r);
+            const rColor = isNaN(estR) ? T.textLight : (estR >= 0 ? T.green : T.red);
+            return (
+              <div key={m.id} style={{ padding: "14px 16px", borderBottom: i < filtered.length - 1 ? `1px solid ${T.borderLight}` : "none", background: i % 2 === 0 ? T.card : T.cardAlt }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: T.text, fontFamily: mono }}>{m.date}</span>
+                    <Pill text={m.pair} type="pair" />
+                    <Pill text={m.direction} />
+                    <span style={{ fontSize: 10, color: T.textMid, fontFamily: mono }}>{m.session}</span>
+                    {!isNaN(estR) && (
+                      <span style={{ fontSize: 11, padding: "2px 8px", background: rColor === T.green ? T.greenBg : T.redBg, color: rColor, borderRadius: 4, fontWeight: 700, fontFamily: mono }}>
+                        Est {estR >= 0 ? "+" : ""}{estR.toFixed(2)}R
+                      </span>
+                    )}
+                  </div>
+                  <div className="no-print" style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => edit(m)} style={{ background: "none", border: "none", cursor: "pointer", color: T.amber, fontSize: 12, padding: "2px 6px" }}>✎</button>
+                    <button onClick={() => remove(m.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 12, padding: "2px 6px" }}>✕</button>
+                  </div>
+                </div>
+                {(m.setup_notes || "").trim() && (
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>Setup</div>
+                    <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{m.setup_notes}</div>
+                  </div>
+                )}
+                {(m.reason_missed || "").trim() && (
+                  <div>
+                    <div style={{ fontSize: 10, color: T.amber, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>Why I Missed It</div>
+                    <div style={{ fontSize: 12, color: T.text, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{m.reason_missed}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════
 // DISCIPLINE TRACKER — month-paginated daily habit grid
 // Default fields: discipline, happy, confident, tactical
 // User can add/remove custom fields (pray, gym, etc.) via Manage modal
@@ -1549,268 +1868,6 @@ const DEFAULT_DISCIPLINE_FIELDS = [
   { key: "confident", label: "Confident" },
   { key: "tactical", label: "Tactical" },
 ];
-
-// ══════════════════════════════════════════
-// YEAR PAGE — 12 mini calendars + year stats + yearly recap
-// ══════════════════════════════════════════
-function YearPage({ user, activeAccount, accountTrades }) {
-  const [viewYear, setViewYear] = useState(new Date().getFullYear());
-  const [recap, setRecap] = useState("");
-  const [recapId, setRecapId] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
-  const [dirty, setDirty] = useState(false);
-
-  // Load yearly recap
-  useEffect(() => {
-    if (!activeAccount) return;
-    const load = async () => {
-      const { data } = await supabase.from("yearly_recaps")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("account_id", activeAccount.id)
-        .eq("year", viewYear)
-        .maybeSingle();
-      if (data) { setRecap(data.recap_text || ""); setRecapId(data.id); }
-      else { setRecap(""); setRecapId(null); }
-      setDirty(false);
-    };
-    load();
-  }, [user.id, activeAccount?.id, viewYear]);
-
-  const save = async () => {
-    if (!activeAccount) return;
-    setSaving(true);
-    const payload = {
-      user_id: user.id, account_id: activeAccount.id, year: viewYear,
-      recap_text: recap, updated_at: new Date().toISOString(),
-    };
-    let res;
-    if (recapId) res = await supabase.from("yearly_recaps").update(payload).eq("id", recapId).select().single();
-    else res = await supabase.from("yearly_recaps").insert(payload).select().single();
-    setSaving(false);
-    if (res.error) { alert("Save failed: " + res.error.message); return; }
-    setRecapId(res.data.id);
-    setDirty(false);
-    setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 1500);
-  };
-
-  // Filter trades for the year
-  const yearTrades = useMemo(() =>
-    (accountTrades || []).filter(t => t.date && t.date.startsWith(String(viewYear))),
-    [accountTrades, viewYear]);
-
-  // Year stats
-  const yearStats = useMemo(() => {
-    if (yearTrades.length === 0) return null;
-    const wins = yearTrades.filter(t => t.result === "Win").length;
-    const losses = yearTrades.filter(t => t.result === "Loss").length;
-    const be = yearTrades.filter(t => t.result === "Breakeven").length;
-    const pnl = yearTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
-    const usd = yearTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
-    const wr = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
-    // Best and worst month
-    const byMonth = {};
-    yearTrades.forEach(t => {
-      const m = t.date.slice(0, 7);
-      if (!byMonth[m]) byMonth[m] = 0;
-      byMonth[m] += parseFloat(t.pnl_pct) || 0;
-    });
-    const monthEntries = Object.entries(byMonth);
-    const bestMonth = monthEntries.length > 0 ? monthEntries.reduce((a, b) => b[1] > a[1] ? b : a) : null;
-    const worstMonth = monthEntries.length > 0 ? monthEntries.reduce((a, b) => b[1] < a[1] ? b : a) : null;
-    // Trading days
-    const tradingDays = new Set(yearTrades.map(t => t.date)).size;
-    return { n: yearTrades.length, wins, losses, be, pnl, usd, wr, bestMonth, worstMonth, tradingDays };
-  }, [yearTrades]);
-
-  // Build day-level PnL map for the year
-  const dayPnLMap = useMemo(() => {
-    const map = {};
-    yearTrades.forEach(t => {
-      if (!map[t.date]) map[t.date] = 0;
-      map[t.date] += parseFloat(t.pnl_pct) || 0;
-    });
-    return map;
-  }, [yearTrades]);
-
-  // Find max abs PnL for intensity scaling
-  const maxAbsPnL = useMemo(() => {
-    const values = Object.values(dayPnLMap).map(Math.abs);
-    return values.length > 0 ? Math.max(...values) : 1;
-  }, [dayPnLMap]);
-
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const currentYear = new Date().getFullYear();
-  const isCurrentYear = viewYear === currentYear;
-  const todayISO = isoDate(new Date());
-
-  // Render mini-calendar for a month
-  const renderMiniMonth = (monthIdx) => {
-    const firstDay = new Date(viewYear, monthIdx, 1);
-    const lastDay = new Date(viewYear, monthIdx + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startDayOfWeek = firstDay.getDay(); // 0 = Sunday
-    const cells = [];
-    // Blanks before first day
-    for (let i = 0; i < startDayOfWeek; i++) cells.push(null);
-    // Days
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateISO = isoDate(new Date(viewYear, monthIdx, d, 12, 0, 0, 0));
-      cells.push({ day: d, dateISO, pnl: dayPnLMap[dateISO] });
-    }
-    // Calculate month total
-    let monthPnL = 0;
-    cells.forEach(c => { if (c && c.pnl) monthPnL += c.pnl; });
-    return (
-      <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 10, padding: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: T.text }}>{monthNames[monthIdx]}</span>
-          {monthPnL !== 0 && (
-            <span style={{ fontSize: 11, fontWeight: 700, color: monthPnL >= 0 ? T.green : T.red, fontFamily: mono }}>
-              {monthPnL >= 0 ? "+" : "−"}{Math.abs(monthPnL).toFixed(1)}%
-            </span>
-          )}
-        </div>
-        {/* Weekday header */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 2 }}>
-          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-            <div key={i} style={{ textAlign: "center", fontSize: 8, color: T.textLight, fontFamily: mono, fontWeight: 600 }}>{d}</div>
-          ))}
-        </div>
-        {/* Day grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
-          {cells.map((c, i) => {
-            if (!c) return <div key={i} style={{ aspectRatio: "1", background: "transparent" }} />;
-            const hasTrades = c.pnl !== undefined && c.pnl !== 0;
-            const isToday = c.dateISO === todayISO;
-            let bg = T.cardAlt;
-            let textColor = T.textLight;
-            if (hasTrades) {
-              const intensity = Math.min(1, Math.abs(c.pnl) / maxAbsPnL);
-              const baseAlpha = 0.25 + intensity * 0.55;
-              if (c.pnl > 0) {
-                bg = `rgba(31, 122, 72, ${baseAlpha})`;
-                textColor = intensity > 0.5 ? "#fff" : T.green;
-              } else {
-                bg = `rgba(183, 58, 44, ${baseAlpha})`;
-                textColor = intensity > 0.5 ? "#fff" : T.red;
-              }
-            }
-            return (
-              <div key={i} title={hasTrades ? `${c.dateISO}: ${c.pnl >= 0 ? "+" : ""}${c.pnl.toFixed(2)}%` : c.dateISO} style={{
-                aspectRatio: "1",
-                background: bg,
-                borderRadius: 3,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 9, fontWeight: hasTrades ? 700 : 500, fontFamily: mono,
-                color: textColor,
-                border: isToday ? `1.5px solid ${T.accent}` : "none",
-              }}>{c.day}</div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-      {/* HEADER */}
-      <div style={{ ...cardS, padding: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button onClick={() => setViewYear(y => y - 1)} style={{ ...btnG, padding: "6px 12px" }}>← {viewYear - 1}</button>
-            <span style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, padding: "0 12px", minWidth: 80, textAlign: "center" }}>{viewYear}</span>
-            <button onClick={() => setViewYear(y => y + 1)} disabled={viewYear >= currentYear} style={{ ...btnG, padding: "6px 12px", opacity: viewYear >= currentYear ? 0.4 : 1 }}>{viewYear + 1} →</button>
-            <button onClick={() => setViewYear(currentYear)} disabled={isCurrentYear} style={{ ...btnG, padding: "6px 12px", fontSize: 11, color: isCurrentYear ? T.textLight : T.accent, borderColor: isCurrentYear ? T.border : T.accent + "60", marginLeft: 4 }}>THIS YEAR</button>
-          </div>
-          <span style={{ fontSize: 12, color: T.textMid, fontFamily: mono }}>{yearTrades.length} {yearTrades.length === 1 ? "trade" : "trades"} in {viewYear}</span>
-        </div>
-      </div>
-
-      {/* YEAR STATS */}
-      {yearStats && (
-        <div style={{ ...cardS, padding: 18 }}>
-          <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 14 }}>Year overview · {viewYear}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Total PnL %</div>
-              <div style={{ fontSize: 22, color: yearStats.pnl >= 0 ? T.green : T.red, fontWeight: 700, letterSpacing: -0.5 }}>{yearStats.pnl >= 0 ? "+" : "−"}{Math.abs(yearStats.pnl).toFixed(2)}%</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Total PnL $</div>
-              <div style={{ fontSize: 22, color: yearStats.usd >= 0 ? T.green : T.red, fontWeight: 700, letterSpacing: -0.5 }}>{yearStats.usd >= 0 ? "+" : "−"}${Math.abs(yearStats.usd).toFixed(0)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Trades</div>
-              <div style={{ fontSize: 22, color: T.text, fontWeight: 700 }}>{yearStats.n}</div>
-              <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{yearStats.tradingDays} trading days</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Win rate</div>
-              <div style={{ fontSize: 22, color: yearStats.wr >= 50 ? T.green : T.red, fontWeight: 700 }}>{yearStats.wr.toFixed(0)}%</div>
-              <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{yearStats.wins}W · {yearStats.losses}L{yearStats.be > 0 ? ` · ${yearStats.be}BE` : ""}</div>
-            </div>
-            {yearStats.bestMonth && (
-              <div>
-                <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Best month</div>
-                <div style={{ fontSize: 16, color: T.green, fontWeight: 700 }}>+{yearStats.bestMonth[1].toFixed(1)}%</div>
-                <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{monthNames[parseInt(yearStats.bestMonth[0].slice(5)) - 1]}</div>
-              </div>
-            )}
-            {yearStats.worstMonth && (
-              <div>
-                <div style={{ fontSize: 10, color: T.textLight, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Worst month</div>
-                <div style={{ fontSize: 16, color: T.red, fontWeight: 700 }}>{yearStats.worstMonth[1].toFixed(1)}%</div>
-                <div style={{ fontSize: 10, color: T.textMid, marginTop: 2 }}>{monthNames[parseInt(yearStats.worstMonth[0].slice(5)) - 1]}</div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 12 MINI-MONTH GRID */}
-      <div style={{ ...cardS, padding: 18 }}>
-        <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono, marginBottom: 14 }}>Year at a glance · {viewYear}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-          {monthNames.map((_, i) => <div key={i}>{renderMiniMonth(i)}</div>)}
-        </div>
-      </div>
-
-      {/* YEARLY RECAP */}
-      <div style={{ ...cardS, padding: 22, borderTop: `3px solid ${T.purple}` }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-          <div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Yearly Recap · {viewYear}</span>
-            <div style={{ fontSize: 11, color: T.textLight, fontStyle: "italic", marginTop: 2 }}>Sit down end-of-year. What worked. What didn't. What changes next year.</div>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {dirty && <span style={{ fontSize: 11, color: T.amber, fontStyle: "italic" }}>unsaved</span>}
-            <button onClick={save} disabled={saving} style={{ ...btnP, padding: "8px 18px", fontSize: 12, opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>
-              {saving ? "Saving..." : justSaved ? "✓ Saved" : (recapId ? "Update" : "Save recap")}
-            </button>
-          </div>
-        </div>
-        <textarea
-          value={recap}
-          onChange={e => { setRecap(e.target.value); setDirty(true); }}
-          onBlur={() => { if (dirty) save(); }}
-          placeholder="Looking back at the year: biggest wins, biggest losses, what I learned about myself, what setups worked, what didn't, what I'm changing next year..."
-          style={{
-            width: "100%", minHeight: 280, padding: "14px 16px",
-            border: `0.5px solid ${T.border}`, borderRadius: 10,
-            background: T.card, color: T.text, fontFamily: font, fontSize: 14, lineHeight: 1.65,
-            resize: "vertical", outline: "none", boxSizing: "border-box",
-          }}
-        />
-      </div>
-
-    </div>
-  );
-}
 
 function DisciplineFieldsModal({ fields, onClose, onAdd, onUpdate, onDelete }) {
   const [newLabel, setNewLabel] = useState("");
@@ -2333,74 +2390,133 @@ function RecapTab({ user, accounts, activeAccount, lockedPeriodType }) {
   const scopeLabel = scope === "all" ? "All Accounts" : (scope === "active" ? `${activeAccount?.name || "—"}` : (accounts.find(a => a.id === scope)?.name || "—"));
 
   // Print mistakes to PDF via browser print dialog
-  const printMistakes = () => {
-    const tradeMistakes = periodTrades
-      .filter(t => (t.notes_mistakes || "").trim())
-      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const printRecap = () => {
     const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
     const headerLine = `${periodLabel} · ${scopeLabel}`;
     const refineText = (recap.positives || "").trim();
+    const negText = (recap.negatives || "").trim();
+    const sortedTrades = [...periodTrades].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const tradeMistakes = sortedTrades.filter(t => (t.notes_mistakes || "").trim());
+
+    // Stats
+    const n = sortedTrades.length;
+    const w = sortedTrades.filter(t => t.result === "Win").length;
+    const l = sortedTrades.filter(t => t.result === "Loss").length;
+    const be = sortedTrades.filter(t => t.result === "Breakeven").length;
+    const wr = (w + l) > 0 ? (w / (w + l)) * 100 : 0;
+    const tPnl = sortedTrades.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+    const tUsd = sortedTrades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+
+    const daysLocal = (t) => {
+      if (!t.date) return null;
+      const s = parseLocalDate(String(t.date).slice(0, 10));
+      const e = t.exit_date ? parseLocalDate(String(t.exit_date).slice(0, 10)) : s;
+      if (!s || !e) return null;
+      const d = Math.floor((e - s) / 86400000) + 1;
+      return d < 1 ? 1 : d;
+    };
+
+    const tradeCards = sortedTrades.map((t, idx) => {
+      const pnlPct = parseFloat(t.pnl_pct) || 0;
+      const pnlUsd = parseFloat(t.pnl_usd) || 0;
+      const dIn = daysLocal(t);
+      const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
+      const noteBody = (t.notes_trade || "").trim() || [t.notes_technical, t.notes_fundamental].filter(Boolean).join("\n\n").trim();
+      const mistakes = (t.notes_mistakes || "").trim();
+      return `<div class="trade-card">
+        <div class="trade-head">
+          <span class="idx">#${idx + 1}</span>
+          <span class="date">${esc(t.date)}${t.exit_date && t.exit_date !== t.date ? ` → ${esc(t.exit_date)}` : ""}</span>
+          <span class="pill pill-pair">${esc(t.pair)}</span>
+          <span class="pill pill-${(t.direction || "").toLowerCase()}">${esc(t.direction)}</span>
+          <span class="pill pill-${(t.result || "").toLowerCase()}">${esc(t.result)}</span>
+          <span class="meta">${esc(t.session)}</span>
+          ${dIn ? `<span class="meta">${dIn}d</span>` : ""}
+          ${t.conviction ? `<span class="meta">C${esc(t.conviction)}</span>` : ""}
+          <span class="pnl ${pnlPct >= 0 ? "pos" : "neg"}">${pnlPct >= 0 ? "+" : "−"}${Math.abs(pnlPct).toFixed(2)}% · ${pnlUsd >= 0 ? "+" : "−"}$${Math.abs(pnlUsd).toFixed(0)}</span>
+        </div>
+        <div class="trade-details">
+          <span>Entry <b>${esc(t.entry || "—")}</b></span>
+          <span>Exit <b>${esc(t.exit || "—")}</b></span>
+          <span>Risk <b>${esc(t.risk)}%</b></span>
+          <span>R:R <b>${esc(t.rr || "—")}</b></span>
+          ${t.result === "Win" && t.max_r ? `<span>Max R <b>${esc(t.max_r)}</b></span>` : ""}
+          ${t.result === "Loss" && t.max_adverse_r ? `<span>Rev R <b>−${esc(t.max_adverse_r)}</b></span>` : ""}
+        </div>
+        ${types.length ? `<div class="types-row">${types.map(tt => `<span class="type-pill">${esc(tt)}</span>`).join("")}</div>` : ""}
+        ${noteBody ? `<div class="note-label">Notes</div><div class="note-body">${esc(noteBody)}</div>` : ""}
+        ${mistakes ? `<div class="note-label mistake-label">Mistakes</div><div class="note-body mistake-body">${esc(mistakes)}</div>` : ""}
+      </div>`;
+    }).join("");
+
     const html = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Mistakes Review — ${esc(periodLabel)}</title>
+<html><head><meta charset="UTF-8"><title>Recap — ${esc(periodLabel)}</title>
 <style>
-  @page { margin: 18mm 14mm; }
+  @page { size: A4; margin: 14mm 12mm; }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', Helvetica, sans-serif; color: #2C2418; margin: 0; padding: 24px; line-height: 1.55; }
-  h1 { font-size: 22px; margin: 0 0 4px 0; font-weight: 700; }
-  .sub { font-size: 12px; color: #6B5D4F; letter-spacing: 0.5px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid #E8E0D4; }
-  .section-title { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #9C8E7E; margin: 22px 0 10px 0; font-weight: 700; }
-  .mistake { margin-bottom: 14px; padding: 12px 14px; background: #FDF0EF; border-left: 4px solid #C4342A; border-radius: 4px; page-break-inside: avoid; }
-  .mistake-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; }
-  .date { font-family: 'Courier New', monospace; color: #6B5D4F; font-weight: 600; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Courier New', monospace; }
-  .pill-pair { background: #FDF3E8; color: #C47A3B; }
-  .pill-long, .pill-win { background: #E8F5EE; color: #1A8754; }
-  .pill-short, .pill-loss { background: #FDF0EF; color: #C4342A; }
+  body { font-family: -apple-system, 'Segoe UI', Helvetica, sans-serif; color: #2C2418; margin: 0; padding: 0; line-height: 1.5; font-size: 10.5pt; }
+  .page { max-width: 186mm; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20pt; margin: 0 0 4px 0; font-weight: 700; }
+  .sub { font-size: 10pt; color: #6B5D4F; letter-spacing: 0.5px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #C97140; font-family: 'Courier New', monospace; }
+  .section-title { font-size: 9pt; letter-spacing: 1.5px; text-transform: uppercase; color: #C97140; margin: 18px 0 8px 0; font-weight: 700; }
+  .stat-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 12px; }
+  .stat { background: #FAF8F4; border-radius: 6px; padding: 10px 12px; page-break-inside: avoid; }
+  .stat-label { font-size: 8pt; color: #6B5D4F; letter-spacing: 1px; text-transform: uppercase; font-weight: 700; margin-bottom: 3px; font-family: 'Courier New', monospace; }
+  .stat-value { font-size: 14pt; font-weight: 700; font-family: 'Courier New', monospace; }
+  .refine, .neg-block { padding: 12px 14px; border-radius: 4px; font-size: 10.5pt; white-space: pre-wrap; page-break-inside: avoid; margin-bottom: 8px; }
+  .refine { background: #E8F5EE; border-left: 4px solid #1F7A48; }
+  .neg-block { background: #FDF0EF; border-left: 4px solid #B73A2C; }
+  .trade-card { margin-bottom: 10px; padding: 10px 12px; background: #fff; border: 1px solid #E8E2D5; border-radius: 6px; page-break-inside: avoid; }
+  .trade-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; font-size: 9.5pt; }
+  .idx { font-size: 8pt; color: #9C8E7E; font-family: 'Courier New', monospace; font-weight: 700; }
+  .date { font-family: 'Courier New', monospace; color: #6B5D4F; font-weight: 600; font-size: 9pt; }
+  .meta { font-size: 8.5pt; color: #6B5D4F; font-family: 'Courier New', monospace; }
+  .pill { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 8pt; font-weight: 700; font-family: 'Courier New', monospace; letter-spacing: 0.3px; }
+  .pill-pair { background: #FDF0E5; color: #C97140; }
+  .pill-long, .pill-win { background: #E8F5EE; color: #1F7A48; }
+  .pill-short, .pill-loss { background: #FDF0EF; color: #B73A2C; }
   .pill-breakeven { background: #FAF8F4; color: #6B5D4F; }
-  .pnl { margin-left: auto; font-family: 'Courier New', monospace; font-weight: 700; }
-  .pnl.pos { color: #1A8754; } .pnl.neg { color: #C4342A; }
-  .body { font-size: 13px; color: #2C2418; white-space: pre-wrap; }
-  .refine { background: #E8F5EE; border-left: 4px solid #1A8754; padding: 14px 16px; border-radius: 4px; font-size: 13px; white-space: pre-wrap; page-break-inside: avoid; }
-  .empty { color: #9C8E7E; font-style: italic; padding: 16px 0; }
-  .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #E8E0D4; font-size: 10px; color: #9C8E7E; font-family: 'Courier New', monospace; }
-  @media print { body { padding: 0; } }
+  .pnl { margin-left: auto; font-family: 'Courier New', monospace; font-weight: 700; font-size: 10pt; }
+  .pos { color: #1F7A48; } .neg { color: #B73A2C; }
+  .trade-details { display: flex; gap: 14px; flex-wrap: wrap; font-size: 9pt; color: #6B5D4F; font-family: 'Courier New', monospace; margin-bottom: 6px; }
+  .trade-details b { color: #2C2418; }
+  .types-row { margin-bottom: 6px; }
+  .type-pill { display: inline-block; background: #F3E8FF; color: #7C3AED; padding: 1px 6px; border-radius: 3px; margin: 0 3px 3px 0; font-weight: 600; font-size: 8pt; font-family: 'Courier New', monospace; }
+  .note-label { font-size: 7.5pt; letter-spacing: 1px; text-transform: uppercase; color: #7C3AED; font-weight: 700; margin-top: 6px; }
+  .note-label.mistake-label { color: #B73A2C; }
+  .note-body { font-size: 9.5pt; white-space: pre-wrap; line-height: 1.45; color: #2C2418; padding: 4px 8px; background: #FAF8F4; border-radius: 3px; margin-top: 2px; }
+  .note-body.mistake-body { background: #FDF0EF; }
+  .empty { color: #9C8E7E; font-style: italic; padding: 12px 0; font-size: 10pt; }
+  .footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #E8E2D5; font-size: 8pt; color: #9C8E7E; font-family: 'Courier New', monospace; text-align: center; }
 </style></head><body>
-<h1>Mistakes Review</h1>
-<div class="sub">${esc(headerLine)} · Generated ${new Date().toLocaleString()}</div>
+<div class="page">
+  <h1>${periodType === "week" ? "Weekly" : "Monthly"} Recap</h1>
+  <div class="sub">${esc(headerLine)} · Generated ${new Date().toLocaleString()}</div>
 
-${refineText ? `
-<div class="section-title">✓ What to Refine / Keep Doing</div>
-<div class="refine">${esc(refineText)}</div>
-` : ""}
+  <div class="section-title">Overview</div>
+  <div class="stat-bar">
+    <div class="stat"><div class="stat-label">Trades</div><div class="stat-value">${n}</div><div class="meta">${w}W · ${l}L${be ? ` · ${be}BE` : ""}</div></div>
+    <div class="stat"><div class="stat-label">Win Rate</div><div class="stat-value" style="color:${wr >= 50 ? "#1F7A48" : "#B73A2C"}">${wr.toFixed(0)}%</div></div>
+    <div class="stat"><div class="stat-label">PnL %</div><div class="stat-value" style="color:${tPnl >= 0 ? "#1F7A48" : "#B73A2C"}">${tPnl >= 0 ? "+" : "−"}${Math.abs(tPnl).toFixed(2)}%</div></div>
+    <div class="stat"><div class="stat-label">PnL $</div><div class="stat-value" style="color:${tUsd >= 0 ? "#1F7A48" : "#B73A2C"}">${tUsd >= 0 ? "+" : "−"}$${Math.abs(tUsd).toFixed(0)}</div></div>
+    <div class="stat"><div class="stat-label">Mistakes</div><div class="stat-value">${tradeMistakes.length}</div></div>
+  </div>
 
-<div class="section-title">✕ Mistakes from Trades · ${tradeMistakes.length} ${tradeMistakes.length === 1 ? "entry" : "entries"}</div>
-${tradeMistakes.length === 0 ? '<div class="empty">No trade mistakes logged in this period.</div>' :
-  tradeMistakes.map(t => {
-    const pnlClass = (parseFloat(t.pnl_pct) || 0) >= 0 ? "pos" : "neg";
-    const pnlVal = (parseFloat(t.pnl_pct) || 0);
-    const pnlStr = `${pnlVal >= 0 ? "+" : ""}${pnlVal.toFixed(2)}%`;
-    return `
-    <div class="mistake">
-      <div class="mistake-head">
-        <span class="date">${esc(t.date)}</span>
-        <span class="pill pill-pair">${esc(t.pair)}</span>
-        <span class="pill pill-${(t.direction || '').toLowerCase()}">${esc(t.direction)}</span>
-        <span class="pill pill-${(t.result || '').toLowerCase()}">${esc(t.result)}</span>
-        <span class="pnl ${pnlClass}">${pnlStr}</span>
-      </div>
-      <div class="body">${esc(t.notes_mistakes)}</div>
-    </div>`;
-  }).join("")
-}
+  ${refineText ? `<div class="section-title">✓ Refine / Keep Doing</div><div class="refine">${esc(refineText)}</div>` : ""}
+  ${negText ? `<div class="section-title">✕ Period Reflection · Negatives</div><div class="neg-block">${esc(negText)}</div>` : ""}
 
-<div class="footer">VARMARI · Mistakes review · Use browser Print → Save as PDF</div>
+  <div class="section-title">Trades · ${n}</div>
+  ${n === 0 ? '<div class="empty">No trades in this period.</div>' : tradeCards}
+
+  <div class="footer">VARMARI · Full recap · Use browser Print → Save as PDF</div>
+</div>
 <script>window.onload = () => setTimeout(() => window.print(), 250);</script>
 </body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) { alert("Please allow popups for varmari.com to print."); return; }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    const w2 = window.open("", "_blank");
+    if (!w2) { alert("Please allow popups for varmari.com to print."); return; }
+    w2.document.open();
+    w2.document.write(html);
+    w2.document.close();
   };
 
   const sectionStyle = (color) => ({ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${color}`, borderRadius: 10, padding: 16, display: "flex", flexDirection: "column" });
@@ -2458,6 +2574,7 @@ ${tradeMistakes.length === 0 ? '<div class="empty">No trade mistakes logged in t
           <span style={{ fontSize: 14, fontWeight: 700 }}>Reflection</span>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             {savedAt && <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Saved {new Date(savedAt).toLocaleString()}</span>}
+            <button onClick={printRecap} style={{ ...btnG, padding: "8px 14px", fontSize: 11, color: T.accent, borderColor: T.accent + "60" }}>⏷ Print Full Recap</button>
             <button onClick={saveRecap} disabled={saving} style={{ ...btnP, padding: "8px 18px", opacity: saving ? 0.6 : 1, background: justSaved ? T.green : T.accent, transition: "background 200ms" }}>{saving ? "Saving..." : justSaved ? "✓ Saved" : (recapId ? "Update" : "Save Recap")}</button>
           </div>
         </div>
@@ -2469,10 +2586,7 @@ ${tradeMistakes.length === 0 ? '<div class="empty">No trade mistakes logged in t
           </div>
           {/* MISTAKES — auto-filled trade mistakes (read-only) + editable area for period-level notes */}
           <div style={sectionStyle(T.red)}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ ...sectionLabel(T.red), marginBottom: 0 }}>✕ Mistakes</div>
-              <button onClick={printMistakes} title="Print / Save as PDF" style={{ ...btnG, fontSize: 10, padding: "4px 10px", color: T.red, borderColor: T.red + "40" }}>📄 PDF</button>
-            </div>
+            <div style={{ ...sectionLabel(T.red), marginBottom: 8 }}>✕ Mistakes</div>
             {(() => {
               const tradeMistakes = periodTrades
                 .filter(t => (t.notes_mistakes || "").trim())
@@ -2725,6 +2839,7 @@ function Journal({ user, onLogout }) {
     const payload = {
       account_id: activeAccount.id, user_id: user.id,
       date: form.date, day: getDay(form.date), session: form.session, pair: form.pair,
+      exit_date: form.exit_date || null,
       risk: parseFloat(form.risk) || 0, direction: form.direction,
       entry: form.entry, exit: form.exit, rr: form.rr, max_r: form.max_r,
       max_adverse_r: form.max_adverse_r || "",
@@ -2733,13 +2848,14 @@ function Journal({ user, onLogout }) {
       exec_link: form.exec_link, bias_link: form.bias_link,
       notes_trade: form.notes_trade || "", notes_market: form.notes_market || "", notes_mistakes: form.notes_mistakes || "",
       trade_types: form.trade_types || "",
+      conviction: form.conviction || null,
     };
     if (editId) {
       let { data, error } = await supabase.from("trades").update(payload).eq("id", editId).select().single();
       // If column doesn't exist (user hasn't run new SQL), drop the new cols and retry
       if (error && /column .* does not exist/i.test(error.message || "")) {
         const fallback = { ...payload };
-        delete fallback.notes_trade; delete fallback.notes_market; delete fallback.max_adverse_r;
+        delete fallback.notes_trade; delete fallback.notes_market; delete fallback.max_adverse_r; delete fallback.exit_date; delete fallback.conviction;
         // Keep old field names so legacy schema still saves something
         fallback.notes_technical = form.notes_trade || "";
         fallback.notes_fundamental = "";
@@ -2753,7 +2869,7 @@ function Journal({ user, onLogout }) {
       let { data, error } = await supabase.from("trades").insert(payload).select().single();
       if (error && /column .* does not exist/i.test(error.message || "")) {
         const fallback = { ...payload };
-        delete fallback.notes_trade; delete fallback.notes_market; delete fallback.max_adverse_r;
+        delete fallback.notes_trade; delete fallback.notes_market; delete fallback.max_adverse_r; delete fallback.exit_date; delete fallback.conviction;
         fallback.notes_technical = form.notes_trade || "";
         fallback.notes_fundamental = "";
         const r2 = await supabase.from("trades").insert(fallback).select().single();
@@ -2769,6 +2885,8 @@ function Journal({ user, onLogout }) {
       ...t,
       risk: t.risk || 1,
       trade_types: t.trade_types || "",
+      exit_date: t.exit_date ? String(t.exit_date).slice(0, 10) : "",
+      conviction: t.conviction || 3,
       // Backward-compat: map old field names to new structure
       notes_trade: t.notes_trade || [t.notes_technical, t.notes_fundamental].filter(Boolean).join("\n\n") || "",
       notes_market: t.notes_market || "",
@@ -2787,7 +2905,8 @@ function Journal({ user, onLogout }) {
   const exportExcel = () => {
     const wb = XLSX.utils.book_new();
     const tradeRows = trades.map(t => ({
-      Date: t.date, Day: t.day, Session: t.session, Pair: t.pair,
+      Date: t.date, "Exit Date": t.exit_date || "", "Days Held": daysInTrade(t) || "",
+      Day: t.day, Session: t.session, Pair: t.pair, Conviction: t.conviction || "",
       "Risk %": t.risk, Direction: t.direction, Entry: t.entry, Exit: t.exit, "R:R": t.rr, "Max R": t.max_r,
       "PnL %": t.pnl_pct, "PnL $": t.pnl_usd, Result: t.result, Tags: t.tags,
       "Technical Notes": t.notes_technical, "Fundamental Notes": t.notes_fundamental, "Mistakes": t.notes_mistakes,
@@ -2803,7 +2922,8 @@ function Journal({ user, onLogout }) {
     for (const acc of accounts) {
       const { data } = await supabase.from("trades").select("*").eq("account_id", acc.id).order("date", { ascending: true });
       const rows = (data || []).map(t => ({
-        Date: t.date, Day: t.day, Session: t.session, Pair: t.pair,
+        Date: t.date, "Exit Date": t.exit_date || "", "Days Held": daysInTrade(t) || "",
+        Day: t.day, Session: t.session, Pair: t.pair, Conviction: t.conviction || "",
         "Risk %": t.risk, Direction: t.direction, Entry: t.entry, Exit: t.exit, "R:R": t.rr, "Max R": t.max_r,
         "PnL %": t.pnl_pct, "PnL $": t.pnl_usd, Result: t.result, Tags: t.tags,
         "Technical Notes": t.notes_technical, "Fundamental Notes": t.notes_fundamental, "Mistakes": t.notes_mistakes,
@@ -2846,7 +2966,7 @@ function Journal({ user, onLogout }) {
 
         const tradeRows = accTrades.map(t => `
           <tr>
-            <td>${esc(t.date)}</td><td>${esc(t.day || '')}</td><td>${esc(t.session || '')}</td>
+            <td>${esc(t.date)}${t.exit_date && t.exit_date !== t.date ? ` <span style="color:#7C3AED;font-size:9px;font-weight:700">(${daysInTrade(t)}d)</span>` : ''}</td><td>${esc(t.day || '')}</td><td>${esc(t.session || '')}</td>
             <td><b>${esc(t.pair)}</b></td><td>${esc(t.direction)}</td><td>${esc(t.risk)}%</td>
             <td>${esc(t.entry)}</td><td>${esc(t.exit)}</td><td>${esc(t.rr || '—')}</td>
             <td>${esc(t.max_r || '—')}</td>
@@ -2934,49 +3054,49 @@ function Journal({ user, onLogout }) {
 <html lang="en"><head><meta charset="UTF-8"><title>Varmari Backup · ${new Date().toLocaleDateString()}</title>
 <style>
 * { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F5F0E8; color: #2C2418; margin: 0; padding: 24px; line-height: 1.5; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #FAF8F4; color: #2C2418; margin: 0; padding: 24px; line-height: 1.5; }
 .container { max-width: 1400px; margin: 0 auto; }
 h1 { font-size: 28px; margin: 0 0 4px 0; } h2 { font-size: 20px; margin: 0; }
 h3 { font-size: 14px; color: #6B5D4F; text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 10px 0; }
 .header { background: #2C2418; color: #fff; padding: 18px 24px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
 .header .meta { font-size: 12px; color: rgba(255,255,255,0.7); font-family: 'Courier New', monospace; }
-.summary { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 20px; border: 1px solid #E8E0D4; }
+.summary { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 20px; border: 1px solid #E8E2D5; }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
 .summary-grid div { padding: 10px; background: #FAF8F4; border-radius: 8px; }
 .summary-grid .label { font-size: 10px; color: #9C8E7E; text-transform: uppercase; letter-spacing: 1px; }
 .summary-grid .value { font-size: 20px; font-weight: 700; color: #2C2418; font-family: 'Courier New', monospace; margin-top: 4px; }
-.account { background: #fff; border: 1px solid #E8E0D4; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-.acc-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid #E8E0D4; }
+.account { background: #fff; border: 1px solid #E8E2D5; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.acc-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid #E8E2D5; }
 .acc-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #6B5D4F; font-family: 'Courier New', monospace; }
-.pos { color: #1A8754; } .neg { color: #C4342A; }
-.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #E8E0D4; }
+.pos { color: #1F7A48; } .neg { color: #B73A2C; }
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #E8E2D5; }
 table.trades { width: 100%; border-collapse: collapse; font-size: 11px; font-family: 'Courier New', monospace; }
-table.trades th { background: #FAF8F4; padding: 8px 6px; text-align: left; border-bottom: 1px solid #E8E0D4; font-size: 9px; text-transform: uppercase; color: #9C8E7E; letter-spacing: 0.5px; white-space: nowrap; }
-table.trades td { padding: 7px 6px; border-bottom: 1px solid #F0EBE3; vertical-align: top; }
+table.trades th { background: #FAF8F4; padding: 8px 6px; text-align: left; border-bottom: 1px solid #E8E2D5; font-size: 9px; text-transform: uppercase; color: #9C8E7E; letter-spacing: 0.5px; white-space: nowrap; }
+table.trades td { padding: 7px 6px; border-bottom: 1px solid #F0EAD9; vertical-align: top; }
 table.trades tr:nth-child(even) td { background: #FAF8F4; }
 table.trades .pnl { font-weight: 600; }
 .pill { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
-.pill-win { background: #E8F5EE; color: #1A8754; } .pill-loss { background: #FDF0EF; color: #C4342A; } .pill-breakeven { background: #FAF8F4; color: #6B5D4F; }
+.pill-win { background: #E8F5EE; color: #1F7A48; } .pill-loss { background: #FDF0EF; color: #B73A2C; } .pill-breakeven { background: #FAF8F4; color: #6B5D4F; }
 .notes-cell { max-width: 280px; }
 .notes-cell .note { font-size: 10px; padding: 4px 6px; background: #fff; margin: 2px 0; border-left: 2px solid #2563EB; border-radius: 3px; line-height: 1.4; word-break: break-word; }
-.notes-cell .note.err { border-left-color: #C4342A; }
-.recap { background: #FAF8F4; border: 1px solid #E8E0D4; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
-.recap-head { display: flex; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid #E8E0D4; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.notes-cell .note.err { border-left-color: #B73A2C; }
+.recap { background: #FAF8F4; border: 1px solid #E8E2D5; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+.recap-head { display: flex; justify-content: space-between; padding-bottom: 10px; border-bottom: 1px solid #E8E2D5; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
 .recap-period { font-weight: 600; font-size: 13px; }
 .recap-saved { font-size: 10px; color: #9C8E7E; font-family: 'Courier New', monospace; }
 .recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
 .rsec { background: #fff; border-radius: 8px; padding: 12px; border-top: 3px solid #ccc; }
-.rsec-pos { border-top-color: #1A8754; } .rsec-tech { border-top-color: #2563EB; } .rsec-fund { border-top-color: #7C3AED; } .rsec-mist { border-top-color: #C4342A; }
+.rsec-pos { border-top-color: #1F7A48; } .rsec-tech { border-top-color: #2563EB; } .rsec-fund { border-top-color: #7C3AED; } .rsec-mist { border-top-color: #B73A2C; }
 .rsec-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-.rsec-pos .rsec-label { color: #1A8754; } .rsec-tech .rsec-label { color: #2563EB; } .rsec-fund .rsec-label { color: #7C3AED; } .rsec-mist .rsec-label { color: #C4342A; }
+.rsec-pos .rsec-label { color: #1F7A48; } .rsec-tech .rsec-label { color: #2563EB; } .rsec-fund .rsec-label { color: #7C3AED; } .rsec-mist .rsec-label { color: #B73A2C; }
 .rsec-body { font-size: 12px; line-height: 1.5; color: #2C2418; }
 .empty { color: #9C8E7E; font-style: italic; padding: 12px 0; }
 .footer { text-align: center; padding: 30px 0 10px 0; color: #9C8E7E; font-size: 11px; font-family: 'Courier New', monospace; }
-.restore-section { background: #fff; border: 2px dashed #C47A3B; border-radius: 12px; padding: 20px; margin: 20px 0; }
-.restore-section h2 { color: #C47A3B; margin-bottom: 8px; font-size: 16px; }
+.restore-section { background: #fff; border: 2px dashed #C97140; border-radius: 12px; padding: 20px; margin: 20px 0; }
+.restore-section h2 { color: #C97140; margin-bottom: 8px; font-size: 16px; }
 .restore-section p { font-size: 13px; color: #6B5D4F; margin: 6px 0; }
-.restore-section button { background: #C47A3B; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-right: 8px; margin-top: 8px; font-size: 13px; }
-.restore-section button:hover { background: #a86530; }
+.restore-section button { background: #C97140; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-right: 8px; margin-top: 8px; font-size: 13px; }
+.restore-section button:hover { background: #B05F2E; }
 details { margin-top: 12px; } details summary { cursor: pointer; font-size: 12px; color: #6B5D4F; padding: 6px 0; }
 details pre { background: #2C2418; color: #E8F5EE; padding: 14px; border-radius: 8px; font-size: 10px; overflow-x: auto; max-height: 400px; }
 </style></head><body>
@@ -3183,9 +3303,10 @@ function downloadJSON() {
     let typeStats = null;
     if (tradeTypes.length > 0) {
       const byType = {};
-      tradeTypes.forEach(tt => { byType[tt.name] = { name: tt.name, n: 0, w: 0, l: 0, pnl: 0, usd: 0 }; });
-      let untaggedN = 0, untaggedW = 0, untaggedL = 0, untaggedPnl = 0, untaggedUsd = 0;
+      tradeTypes.forEach(tt => { byType[tt.name] = { name: tt.name, n: 0, w: 0, l: 0, pnl: 0, usd: 0, daysSum: 0, daysN: 0 }; });
+      let untaggedN = 0, untaggedW = 0, untaggedL = 0, untaggedPnl = 0, untaggedUsd = 0, untaggedDaysSum = 0, untaggedDaysN = 0;
       _trades.forEach(t => {
+        const d = daysInTrade(t);
         const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
         if (types.length === 0) {
           untaggedN++;
@@ -3193,21 +3314,24 @@ function downloadJSON() {
           else if (t.result === "Loss") untaggedL++;
           untaggedPnl += parseFloat(t.pnl_pct) || 0;
           untaggedUsd += parseFloat(t.pnl_usd) || 0;
+          if (d) { untaggedDaysSum += d; untaggedDaysN++; }
           return;
         }
         types.forEach(name => {
-          if (!byType[name]) byType[name] = { name, n: 0, w: 0, l: 0, pnl: 0, usd: 0 };
+          if (!byType[name]) byType[name] = { name, n: 0, w: 0, l: 0, pnl: 0, usd: 0, daysSum: 0, daysN: 0 };
           byType[name].n++;
           if (t.result === "Win") byType[name].w++;
           else if (t.result === "Loss") byType[name].l++;
           byType[name].pnl += parseFloat(t.pnl_pct) || 0;
           byType[name].usd += parseFloat(t.pnl_usd) || 0;
+          if (d) { byType[name].daysSum += d; byType[name].daysN++; }
         });
       });
       const list = Object.values(byType).map(x => ({
         ...x,
         wr: (x.w + x.l) > 0 ? (x.w / (x.w + x.l)) * 100 : null,
         avgPnl: x.n > 0 ? x.pnl / x.n : 0,
+        avgDays: x.daysN > 0 ? x.daysSum / x.daysN : null,
       })).filter(x => x.n > 0).sort((a, b) => b.pnl - a.pnl);
       typeStats = {
         list,
@@ -3215,8 +3339,35 @@ function downloadJSON() {
           name: "Untagged", n: untaggedN, w: untaggedW, l: untaggedL,
           wr: (untaggedW + untaggedL) > 0 ? (untaggedW / (untaggedW + untaggedL)) * 100 : null,
           pnl: untaggedPnl, usd: untaggedUsd, avgPnl: untaggedN > 0 ? untaggedPnl / untaggedN : 0,
+          avgDays: untaggedDaysN > 0 ? untaggedDaysSum / untaggedDaysN : null,
         } : null,
       };
+    }
+
+    // CONVICTION STATS — expectancy per conviction level (1-5)
+    // The whole point: does your gut on the way in match the outcome?
+    let convictionStats = null;
+    const tradesWithConv = _trades.filter(t => t.conviction != null && t.conviction !== "" && !isNaN(parseInt(t.conviction)));
+    if (tradesWithConv.length >= 3) {
+      const buckets = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+      tradesWithConv.forEach(t => {
+        const c = parseInt(t.conviction);
+        if (c >= 1 && c <= 5) buckets[c].push(t);
+      });
+      const rows = [1, 2, 3, 4, 5].map(level => {
+        const list = buckets[level];
+        if (list.length === 0) return { level, n: 0 };
+        const w = list.filter(t => t.result === "Win").length;
+        const l = list.filter(t => t.result === "Loss").length;
+        const pnl = list.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+        const usd = list.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+        return {
+          level, n: list.length, w, l, pnl, usd,
+          wr: (w + l) > 0 ? (w / (w + l)) * 100 : null,
+          avgPnl: list.length > 0 ? pnl / list.length : 0,
+        };
+      });
+      convictionStats = { rows, total: tradesWithConv.length };
     }
 
     // ADVERSE R STATS — measure on wins (how lucky) and losses (how wrong)
@@ -3244,7 +3395,7 @@ function downloadJSON() {
       };
     }
 
-    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, avgIntendedR, avgRealizedR, exitQuality, typeStats, tilt, pressed, adverseStats };
+    return { n, w: w.length, l: l.length, be: b.length, wr, tPnl, tUsd, avgW, avgL, pf, best, worst, maxS, day, sess, pair, dir, mo, eq, yMin, yMax, base, maxDD, maxDDpct, currentDD, currentDDpct, daysSincePeak, peak, avgIntendedR, avgRealizedR, exitQuality, typeStats, tilt, pressed, adverseStats, convictionStats };
   }, [trades, activeAccount, pairNames, tradeTypes, dashboardPeriod]);
 
   const filtered = useMemo(() => {
@@ -3263,6 +3414,92 @@ function downloadJSON() {
   const clearFilters = () => { setFPair("All"); setFResult("All"); setFDay("All"); setFSess("All"); setFDir("All"); setFTag("All"); setSearch(""); };
   const hasActiveFilters = fPair !== "All" || fResult !== "All" || fDay !== "All" || fSess !== "All" || fDir !== "All" || fTag !== "All" || search !== "";
   const toggleSort = col => { if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol(col); setSortDir("desc"); } };
+
+  const printTradeLog = () => {
+    const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
+    const list = filtered;
+    const totalPnl = list.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
+    const totalUsd = list.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+    const wins = list.filter(t => t.result === "Win").length;
+    const losses = list.filter(t => t.result === "Loss").length;
+    const wr = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
+
+    const rows = list.map((t, idx) => {
+      const pnlPct = parseFloat(t.pnl_pct) || 0;
+      const pnlUsd = parseFloat(t.pnl_usd) || 0;
+      const dInT = daysInTrade(t);
+      const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
+      const noteBody = (t.notes_trade || "").trim() || [t.notes_technical, t.notes_fundamental].filter(Boolean).join("\n\n").trim();
+      const mistakes = (t.notes_mistakes || "").trim();
+      return `<tr>
+        <td>${esc(t.date)}${dInT && dInT > 1 ? ` <span style="color:#7C3AED;font-weight:700">(${dInT}d)</span>` : ""}</td>
+        <td>${esc((t.day || "").slice(0, 3))}</td>
+        <td>${esc(t.session)}</td>
+        <td><strong>${esc(t.pair)}</strong></td>
+        <td>${esc(t.direction)}</td>
+        <td>${esc(t.risk)}%</td>
+        <td>${esc(t.rr || "—")}</td>
+        <td>${t.result === "Win" ? esc(t.max_r || "—") : "—"}</td>
+        <td class="pnl ${pnlPct >= 0 ? "pos" : "neg"}">${pnlPct >= 0 ? "+" : "−"}${Math.abs(pnlPct).toFixed(2)}%</td>
+        <td class="pnl ${pnlUsd >= 0 ? "pos" : "neg"}">${pnlUsd >= 0 ? "+" : "−"}$${Math.abs(pnlUsd).toFixed(0)}</td>
+        <td>${esc(t.result)}</td>
+        <td>${t.conviction ? "C" + esc(t.conviction) : "—"}</td>
+        <td class="types">${types.map(tt => `<span class="type-pill">${esc(tt)}</span>`).join("")}</td>
+      </tr>${(noteBody || mistakes) ? `<tr class="notes-row"><td colspan="13" style="padding:6px 8px 10px 8px;background:#FAF8F4;border-bottom:1px solid #E8E2D5">
+        ${noteBody ? `<div style="margin-bottom:${mistakes ? "6px" : "0"}"><span style="font-size:7pt;letter-spacing:1px;text-transform:uppercase;color:#7C3AED;font-weight:700">Notes</span><div style="font-size:9pt;white-space:pre-wrap;line-height:1.45;color:#2C2418;margin-top:2px">${esc(noteBody)}</div></div>` : ""}
+        ${mistakes ? `<div><span style="font-size:7pt;letter-spacing:1px;text-transform:uppercase;color:#B73A2C;font-weight:700">Mistakes</span><div style="font-size:9pt;white-space:pre-wrap;line-height:1.45;color:#2C2418;margin-top:2px">${esc(mistakes)}</div></div>` : ""}
+      </td></tr>` : ""}`;
+    }).join("");
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Varmari · Trade Log</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Helvetica, sans-serif; color: #2C2418; margin: 0; padding: 0; line-height: 1.4; font-size: 9pt; }
+  .page { max-width: 100%; }
+  .header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; border-bottom: 2px solid #C97140; margin-bottom: 10px; }
+  .header h1 { font-size: 15pt; margin: 0; font-weight: 700; }
+  .meta { font-size: 9pt; color: #6B5D4F; font-family: 'Courier New', monospace; }
+  .stat-bar { display: flex; gap: 14px; font-size: 9pt; font-family: 'Courier New', monospace; margin: 0 0 10px 0; padding: 6px 10px; background: #FAF8F4; border-radius: 4px; }
+  .stat-bar strong { color: #2C2418; }
+  table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+  th { text-align: left; padding: 5px 6px; background: #FAF8F4; border-bottom: 1px solid #E8E2D5; font-weight: 700; color: #6B5D4F; text-transform: uppercase; font-size: 7pt; letter-spacing: 0.5px; }
+  td { padding: 5px 6px; border-bottom: 1px solid #F0EAD9; }
+  .pnl { font-weight: 700; }
+  .pos { color: #1F7A48; }
+  .neg { color: #B73A2C; }
+  .types { font-size: 7.5pt; }
+  .type-pill { display: inline-block; background: #F3E8FF; color: #7C3AED; padding: 1px 5px; border-radius: 3px; margin: 0 2px 2px 0; font-weight: 600; }
+  .notes-row td { border-bottom: 1px solid #E8E2D5 !important; }
+  tr { page-break-inside: avoid; }
+  .footer { margin-top: 12px; padding-top: 6px; border-top: 1px solid #E8E2D5; font-size: 7.5pt; color: #9C8E7E; font-family: 'Courier New', monospace; text-align: center; }
+</style></head><body>
+<div class="page">
+  <div class="header">
+    <h1>Trade Log · ${esc(activeAccount?.name || "")}</h1>
+    <div class="meta">${list.length} trades · Generated ${new Date().toLocaleString()}</div>
+  </div>
+  <div class="stat-bar">
+    <span>Trades: <strong>${list.length}</strong></span>
+    <span>Wins: <strong style="color:#1F7A48">${wins}</strong></span>
+    <span>Losses: <strong style="color:#B73A2C">${losses}</strong></span>
+    <span>Win Rate: <strong>${wr.toFixed(1)}%</strong></span>
+    <span>Total PnL: <strong class="${totalPnl >= 0 ? "pos" : "neg"}">${totalPnl >= 0 ? "+" : "−"}${Math.abs(totalPnl).toFixed(2)}%</strong></span>
+    <span>Total $: <strong class="${totalUsd >= 0 ? "pos" : "neg"}">${totalUsd >= 0 ? "+" : "−"}$${Math.abs(totalUsd).toFixed(2)}</strong></span>
+  </div>
+  <table>
+    <thead><tr><th>Date</th><th>Day</th><th>Session</th><th>Pair</th><th>Dir</th><th>Risk</th><th>R:R</th><th>Max R</th><th>PnL %</th><th>PnL $</th><th>Result</th><th>Conv</th><th>Types</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="13" style="text-align:center;padding:20px;color:#9C8E7E">No trades to print.</td></tr>`}</tbody>
+  </table>
+  <div class="footer">Varmari · ${esc(activeAccount?.name || "")}</div>
+</div>
+<script>setTimeout(() => window.print(), 250);</script>
+</body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) { alert("Pop-up blocked — please allow popups for this site."); return; }
+    w.document.write(html); w.document.close();
+  };
 
   const tabs = [
     { k: "dashboard", l: "Dashboard", i: "◈" },
@@ -3445,6 +3682,7 @@ function downloadJSON() {
             </div>
             <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={{ ...btnP, fontSize: 11, padding: "6px 14px" }}>+ New Trade</button>
+              {tab === "log" && <button onClick={printTradeLog} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.accent, borderColor: T.accent + "60" }}>⏷ Print</button>}
               <button onClick={exportExcel} style={{ ...btnG, fontSize: 10, padding: "5px 10px" }}>Export Excel</button>
               <button onClick={exportAllBackup} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.accent, borderColor: T.accent + "60" }}>⬇ Excel Backup</button>
               <button onClick={exportHTMLBackup} disabled={exportingHTML} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.green, borderColor: T.green + "60", opacity: exportingHTML ? 0.6 : 1 }}>{exportingHTML ? "Building..." : "⬇ HTML Backup"}</button>
@@ -3982,6 +4220,7 @@ function downloadJSON() {
                               <div style={{ fontSize: 20, fontWeight: 700, color: cP(t.pnl), fontFamily: mono, lineHeight: 1.1, marginBottom: 4 }}>{fP(t.pnl)}</div>
                               <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 2 }}>{t.n} {t.n === 1 ? "trade" : "trades"} · {t.wr != null ? `${t.wr.toFixed(0)}% WR` : "—"}</div>
                               <div style={{ fontSize: 11, color: cP(t.avgPnl), fontFamily: mono }}>Avg {fP(t.avgPnl)}</div>
+                              {t.avgDays != null && <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 2 }}>Held ~{t.avgDays.toFixed(1)}d</div>}
                             </div>
                           );
                         })}
@@ -3991,11 +4230,45 @@ function downloadJSON() {
                             <div style={{ fontSize: 20, fontWeight: 700, color: cP(S.typeStats.untagged.pnl), fontFamily: mono, lineHeight: 1.1, marginBottom: 4 }}>{fP(S.typeStats.untagged.pnl)}</div>
                             <div style={{ fontSize: 11, color: T.textMid, fontFamily: mono, marginBottom: 2 }}>{S.typeStats.untagged.n} {S.typeStats.untagged.n === 1 ? "trade" : "trades"} · {S.typeStats.untagged.wr != null ? `${S.typeStats.untagged.wr.toFixed(0)}% WR` : "—"}</div>
                             <div style={{ fontSize: 11, color: cP(S.typeStats.untagged.avgPnl), fontFamily: mono }}>Avg {fP(S.typeStats.untagged.avgPnl)}</div>
+                            {S.typeStats.untagged.avgDays != null && <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 2 }}>Held ~{S.typeStats.untagged.avgDays.toFixed(1)}d</div>}
                           </div>
                         )}
                       </div>
                       <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
                         <strong style={{ color: T.amber }}>Read:</strong> Each trade can have multiple types — totals here may exceed your trade count. Compare types: which categories print money, which lose? The losers are where you stop trading or refine your edge.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PERFORMANCE BY CONVICTION — does your gut match outcomes? */}
+                  {S.convictionStats && (
+                    <div style={{ ...cardS, padding: 18 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                        <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Performance by Conviction</span>
+                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>Does your pre-trade read match the outcome?</span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+                        {S.convictionStats.rows.map(r => {
+                          if (r.n === 0) {
+                            return (
+                              <div key={r.level} style={{ background: T.cardAlt, border: `1px dashed ${T.border}`, borderRadius: 10, padding: 14, opacity: 0.5, textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: T.textLight, fontFamily: mono, marginBottom: 4 }}>C{r.level}</div>
+                                <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>no trades</div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={r.level} style={{ background: T.card, border: `1px solid ${T.border}`, borderTop: `3px solid ${cP(r.pnl)}`, borderRadius: 10, padding: 14, textAlign: "center" }}>
+                              <div style={{ fontSize: 10, color: T.textMid, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>C{r.level}</div>
+                              <div style={{ fontSize: 18, fontWeight: 700, color: cP(r.pnl), fontFamily: mono, lineHeight: 1.1, marginBottom: 4 }}>{fP(r.pnl)}</div>
+                              <div style={{ fontSize: 10, color: T.textMid, fontFamily: mono, marginBottom: 2 }}>{r.n} · {r.wr != null ? `${r.wr.toFixed(0)}%` : "—"}</div>
+                              <div style={{ fontSize: 10, color: cP(r.avgPnl), fontFamily: mono }}>Avg {fP(r.avgPnl)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 10, padding: "8px 10px", background: T.cardAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                        <strong style={{ color: T.amber }}>Read:</strong> If C5s don't outperform C1s, your read isn't calibrated — you're guessing. Ideal: monotonic gradient from C1 (small edge) to C5 (biggest edge).
                       </div>
                     </div>
                   )}
@@ -4221,8 +4494,31 @@ function downloadJSON() {
                       </div>
                     )}
 
+                    {/* PRE-TRADE CONVICTION — how strong was your read before entry */}
+                    <div style={{ background: T.cardAlt, border: `1px solid ${T.border}`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                        <span style={{ fontSize: 10, color: T.textMid, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, fontFamily: font }}>Conviction (before entry)</span>
+                        <span style={{ fontSize: 10, color: T.textLight, fontFamily: mono }}>1 = coin-flip · 5 = A+ setup</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {[1, 2, 3, 4, 5].map(n => {
+                          const active = (form.conviction || 0) >= n;
+                          return (
+                            <button key={n} type="button" onClick={() => setForm({ ...form, conviction: n })} style={{
+                              flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 700, fontFamily: mono,
+                              background: active ? T.accent : T.card,
+                              color: active ? "#fff" : T.textMid,
+                              border: `1px solid ${active ? T.accent : T.border}`,
+                              borderRadius: 8, cursor: "pointer",
+                            }}>{n}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
                       <Field label="Date"><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inputS} /></Field>
+                      <Field label="Exit Date"><input type="date" value={form.exit_date || ""} onChange={e => setForm({ ...form, exit_date: e.target.value })} min={form.date} style={inputS} /></Field>
                       <Field label="Session"><select value={form.session} onChange={e => setForm({ ...form, session: e.target.value })} style={selectS}>{SESSIONS.map(s => <option key={s}>{s}</option>)}</select></Field>
                       <Field label="Pair">
                         <select value={form.pair} onChange={e => setForm({ ...form, pair: e.target.value })} style={selectS}>
@@ -4369,7 +4665,17 @@ function downloadJSON() {
                             const i = rowIndex++;
                             rows.push(
                               <tr key={t.id} style={{ background: i % 2 === 0 ? T.card : T.cardAlt }}>
-                                <td style={{ padding: "8px 7px", whiteSpace: "nowrap", borderBottom: `1px solid ${T.borderLight}` }}>{t.date}</td>
+                                <td style={{ padding: "8px 7px", whiteSpace: "nowrap", borderBottom: `1px solid ${T.borderLight}` }}>
+                                  {t.date}
+                                  {(() => {
+                                    const d = daysInTrade(t);
+                                    if (!d || d <= 1) return null;
+                                    return <span title={`Held ${d} days${t.exit_date ? ` (exit ${t.exit_date})` : ""}`} style={{ display: "inline-block", marginLeft: 6, padding: "1px 6px", background: T.purpleBg, color: T.purple, borderRadius: 4, fontSize: 9, fontWeight: 700, fontFamily: mono, verticalAlign: "middle" }}>{d}d</span>;
+                                  })()}
+                                  {t.conviction != null && t.conviction !== "" && (
+                                    <span title={`Pre-trade conviction: ${t.conviction}/5`} style={{ display: "inline-block", marginLeft: 4, padding: "1px 6px", background: T.accentBg, color: T.accent, borderRadius: 4, fontSize: 9, fontWeight: 700, fontFamily: mono, verticalAlign: "middle" }}>C{t.conviction}</span>
+                                  )}
+                                </td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.day?.substring(0, 3)}</td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.session}</td>
                                 <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.pair} type="pair" /></td>
@@ -4422,6 +4728,7 @@ function downloadJSON() {
                 <div style={{ ...cardS, padding: 4, display: "flex", gap: 4, alignSelf: "flex-start" }}>
                   {[
                     { k: "daily", l: "📋 Daily Plan" },
+                    { k: "missed", l: "⊘ Missed" },
                     { k: "weekly", l: "📅 Weekly Recap" },
                     { k: "monthly", l: "🗓️ Monthly Recap" },
                   ].map(s => (
@@ -4441,6 +4748,7 @@ function downloadJSON() {
                   onNewTrade={(dateISO) => { setForm({ ...emptyTrade(), date: dateISO }); setEditId(null); setShowForm(true); }}
                   onEditTrade={(t) => { editTrade(t); }}
                 />}
+                {dailySubTab === "missed" && <MissedTradesPage user={user} activeAccount={activeAccount} />}
                 {dailySubTab === "weekly" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} lockedPeriodType="week" />}
                 {dailySubTab === "monthly" && <RecapTab user={user} accounts={accounts} activeAccount={activeAccount} lockedPeriodType="month" />}
               </div>
