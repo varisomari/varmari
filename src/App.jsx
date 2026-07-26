@@ -22,77 +22,82 @@ const DAYS_W = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
 const BIAS_TYPES = ["Transition","Re-Transition","Confirmation","Continuation","None"];
 
 // ═══════════════════════════════════════════════════════════════════
-// DESIGN SYSTEM — Neumorphic lavender base + purple primary + soft gradients
-// Based on user-selected refs: soft raised cards on lavender bg, no borders,
-// gradient stat tiles, big display typography
+// DESIGN SYSTEM — White-dominant base, subtle lavender tint on app bg,
+// purple ONLY as accent (never as background). Big graphical dashboard.
 // ═══════════════════════════════════════════════════════════════════
 const T = {
-  // Surfaces
-  bg: "#EEEDF6",           // Lavender-tinted app background (neumorphism base)
-  bgDeep: "#E4E1F0",       // Slightly deeper for insets/pressed states
-  card: "#FFFFFF",         // Cards float above bg
-  cardAlt: "#F7F5FE",      // Subtle alt surface (never pure white)
-  cardSoft: "#F0EEF9",     // Even softer inner surface
-  border: "transparent",   // Neumorphism = no borders. Shadows do the work.
-  borderLight: "transparent",
-  borderSubtle: "#E4E1F0", // Only used where truly needed (table dividers)
+  // Surfaces — mostly white, faint lavender only on the outermost app shell
+  bg: "#F7F6FB",           // Very faint lavender-white app background
+  bgDeep: "#EDEBF3",       // Only used for deep insets (rare)
+  card: "#FFFFFF",         // Pure white cards everywhere
+  cardAlt: "#FAFAFC",      // Barely-off-white for subtle rows/sections
+  cardSoft: "#F5F4FA",     // Slightly deeper for pressed/inset UI
 
   // Text
-  text: "#1F1B3A",         // Deep indigo-black — reads warm on lavender bg
-  textMid: "#5B5478",      // Muted purple-gray
-  textLight: "#9A93B5",    // Faint labels
+  text: "#0F0F1A",         // Almost black — high contrast on white
+  textMid: "#5C5A6B",      // Muted for secondary text
+  textLight: "#9694A8",    // Faint labels only
 
-  // Accent (primary — purple)
-  accent: "#7B6BEF",       // Bright modern purple (from ref images)
-  accentDeep: "#5B4BCE",   // Darker for hover/press
-  accentBg: "#EDE9FE",     // Soft purple wash
-  accentGlow: "rgba(123, 107, 239, 0.35)",  // For shadows
+  // Accent (used SPARINGLY — buttons, active states, one chart color)
+  accent: "#6D5AE6",       // Modern purple
+  accentDeep: "#4F3FCF",
+  accentBg: "#F2EFFE",     // Very faint purple tint, only for hover states
+  accentGlow: "rgba(109, 90, 230, 0.25)",
 
-  // Secondary accent (terracotta kept as brand memory — used sparingly)
-  brand: "#E88968",        // Peach-terracotta
-  brandBg: "#FEEEE5",
+  brand: "#F97316",        // Orange — used for one thing (currently unused)
+  brandBg: "#FFF4EB",
 
   // Semantic
-  green: "#22C55E",        // Fresh mint green
-  greenBg: "#DCFCE7",
-  greenGlow: "rgba(34, 197, 94, 0.28)",
-  red: "#EF4444",          // Coral red
-  redBg: "#FEE2E2",
-  redGlow: "rgba(239, 68, 68, 0.28)",
+  green: "#10B981",
+  greenBg: "#ECFDF5",
+  greenGlow: "rgba(16, 185, 129, 0.22)",
+  red: "#EF4444",
+  redBg: "#FEF2F2",
+  redGlow: "rgba(239, 68, 68, 0.22)",
   blue: "#3B82F6",
-  blueBg: "#DBEAFE",
-  purple: "#8B5CF6",       // Alt purple for variation
-  purpleBg: "#EDE9FE",
+  blueBg: "#EFF6FF",
+  purple: "#8B5CF6",       // Secondary purple for variation
+  purpleBg: "#F5F3FF",
   amber: "#F59E0B",
-  amberBg: "#FEF3C7",
+  amberBg: "#FFFBEB",
+  teal: "#14B8A6",
+  tealBg: "#F0FDFA",
+  pink: "#EC4899",
+  pinkBg: "#FDF2F8",
 
-  headerBg: "#EEEDF6",     // Match bg for seamless top bar
+  // Divider — subtle, only where needed
+  divider: "#F0EEF5",
+  border: "transparent",   // Cards use shadows, not borders
+  borderLight: "transparent",
+  borderSubtle: "#EEECF3", // Only for actual dividers inside tables
 
-  // Gradients — the money maker for stat tiles
-  gradPurple: "linear-gradient(135deg, #7B6BEF 0%, #A78BFA 100%)",
-  gradPeach: "linear-gradient(135deg, #FDBA74 0%, #E88968 100%)",
-  gradGreen: "linear-gradient(135deg, #4ADE80 0%, #22C55E 100%)",
-  gradRed: "linear-gradient(135deg, #F87171 0%, #EF4444 100%)",
-  gradBlue: "linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)",
-  gradLavender: "linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)",
-  gradSoft: "linear-gradient(180deg, #FFFFFF 0%, #F7F5FE 100%)",
+  headerBg: "#FFFFFF",
 
-  // Neumorphic shadows — the signature look
-  // Cards: subtle raised shadow (light top-left, dark bottom-right)
-  shadowRaised: "8px 8px 20px rgba(174, 174, 214, 0.35), -8px -8px 20px rgba(255, 255, 255, 0.85)",
-  shadowRaisedSm: "4px 4px 10px rgba(174, 174, 214, 0.28), -4px -4px 10px rgba(255, 255, 255, 0.9)",
-  shadowRaisedLg: "12px 12px 32px rgba(174, 174, 214, 0.4), -12px -12px 32px rgba(255, 255, 255, 0.9)",
-  // Inset: pressed/inputs
-  shadowInset: "inset 4px 4px 8px rgba(174, 174, 214, 0.25), inset -4px -4px 8px rgba(255, 255, 255, 0.9)",
-  shadowInsetSm: "inset 2px 2px 4px rgba(174, 174, 214, 0.2), inset -2px -2px 4px rgba(255, 255, 255, 0.9)",
-  // Glow shadow for gradient tiles
-  shadowPurpleGlow: "0 10px 30px rgba(123, 107, 239, 0.25), 0 4px 8px rgba(123, 107, 239, 0.15)",
-  shadowPeachGlow: "0 10px 30px rgba(232, 137, 104, 0.25), 0 4px 8px rgba(232, 137, 104, 0.15)",
-  shadowGreenGlow: "0 10px 30px rgba(34, 197, 94, 0.25), 0 4px 8px rgba(34, 197, 94, 0.15)",
-  shadowRedGlow: "0 10px 30px rgba(239, 68, 68, 0.25), 0 4px 8px rgba(239, 68, 68, 0.15)",
+  // Gradients — reserved for hero stat tiles and chart fills
+  gradPurple: "linear-gradient(135deg, #6D5AE6 0%, #9B87FE 100%)",
+  gradPurpleSoft: "linear-gradient(135deg, #EDE9FE 0%, #E0DAFA 100%)",
+  gradGreen: "linear-gradient(135deg, #10B981 0%, #34D399 100%)",
+  gradGreenSoft: "linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%)",
+  gradRed: "linear-gradient(135deg, #EF4444 0%, #F87171 100%)",
+  gradRedSoft: "linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%)",
+  gradBlue: "linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%)",
+  gradOrange: "linear-gradient(135deg, #F97316 0%, #FB923C 100%)",
+  gradTeal: "linear-gradient(135deg, #14B8A6 0%, #5EEAD4 100%)",
+
+  // Shadows — subtle, professional (NOT heavy neumorphism)
+  shadowXs: "0 1px 2px rgba(15, 15, 26, 0.04)",
+  shadowSm: "0 1px 3px rgba(15, 15, 26, 0.05), 0 1px 2px rgba(15, 15, 26, 0.03)",
+  shadowMd: "0 4px 12px rgba(15, 15, 26, 0.06), 0 2px 4px rgba(15, 15, 26, 0.04)",
+  shadowLg: "0 12px 32px rgba(15, 15, 26, 0.08), 0 4px 8px rgba(15, 15, 26, 0.04)",
+  shadowInset: "inset 0 1px 3px rgba(15, 15, 26, 0.06)",
+  // Colored glows for hero tiles only
+  shadowPurpleGlow: "0 12px 28px rgba(109, 90, 230, 0.28), 0 4px 8px rgba(109, 90, 230, 0.14)",
+  shadowGreenGlow: "0 12px 28px rgba(16, 185, 129, 0.26), 0 4px 8px rgba(16, 185, 129, 0.12)",
+  shadowRedGlow: "0 12px 28px rgba(239, 68, 68, 0.26), 0 4px 8px rgba(239, 68, 68, 0.12)",
+  shadowOrangeGlow: "0 12px 28px rgba(249, 115, 22, 0.26), 0 4px 8px rgba(249, 115, 22, 0.12)",
 };
 const font = `'Plus Jakarta Sans', 'Inter', -apple-system, 'SF Pro Display', system-ui, sans-serif`;
-const fontDisplay = `'Plus Jakarta Sans', 'Inter', system-ui, sans-serif`;  // Same but hint for display use
+const fontDisplay = `'Plus Jakarta Sans', 'Inter', system-ui, sans-serif`;
 const mono = `'JetBrains Mono', 'Fira Code', 'Menlo', ui-monospace, monospace`;
 
 // Mobile detection — reactive. Breakpoint 720px (below = mobile).
@@ -111,32 +116,29 @@ const useIsMobile = () => {
 // can't be done via inline styles (media queries, ::-webkit-scrollbar, etc.)
 const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-  html, body, #root { overflow-x: hidden; background: #EEEDF6; }
-  body { -webkit-text-size-adjust: 100%; margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+  html, body, #root { overflow-x: hidden; background: #F7F6FB; }
+  body { -webkit-text-size-adjust: 100%; margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; color: #0F0F1A; }
   input, select, textarea { font-size: 16px !important; }
   @media (min-width: 720px) { input, select, textarea { font-size: 14px !important; } }
-  button { touch-action: manipulation; }
+  button { touch-action: manipulation; font-family: 'Plus Jakarta Sans', sans-serif; }
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 
-  /* Sleek scrollbars matching lavender theme */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #C7BFDE; border-radius: 8px; }
-  ::-webkit-scrollbar-thumb:hover { background: #A78BFA; }
+  ::-webkit-scrollbar-thumb { background: #D8D5E3; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #B0AAC7; }
 
   .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .scroll-x::-webkit-scrollbar { height: 6px; }
-  .scroll-x::-webkit-scrollbar-thumb { background: #A78BFA; border-radius: 3px; }
 
   .sidebar-backdrop { display: none; }
 
-  /* Focus ring — soft purple glow */
   input:focus, select:focus, textarea:focus {
-    box-shadow: inset 2px 2px 4px rgba(174, 174, 214, 0.2), inset -2px -2px 4px rgba(255, 255, 255, 0.9), 0 0 0 3px rgba(123, 107, 239, 0.15) !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 0 0 3px rgba(109, 90, 230, 0.15), inset 0 0 0 1px rgba(109, 90, 230, 0.4) !important;
   }
 
-  /* Button hover — subtle lift */
-  button:not(:disabled):hover { filter: brightness(1.05); }
+  button:not(:disabled):hover { filter: brightness(0.98); }
   button:not(:disabled):active { transform: translateY(1px); }
 
   @media (min-width: 900px) {
@@ -166,13 +168,13 @@ const GLOBAL_CSS = `
       top: 0; left: 0; height: 100vh !important;
       transform: translateX(-100%);
       transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 8px 0 32px rgba(31, 27, 58, 0.2) !important;
+      box-shadow: 8px 0 32px rgba(15, 15, 26, 0.15) !important;
     }
     .sidebar.sidebar-open { transform: translateX(0); }
     .sidebar-backdrop {
       display: block !important;
       position: fixed; inset: 0;
-      background: rgba(31, 27, 58, 0.5); z-index: 99;
+      background: rgba(15, 15, 26, 0.4); z-index: 99;
       backdrop-filter: blur(4px);
     }
   }
@@ -180,13 +182,6 @@ const GLOBAL_CSS = `
   @media print {
     .no-print, .sidebar, .sidebar-toggle { display: none !important; }
     body { background: #fff !important; }
-  }
-
-  /* Subtle shimmer on gradient tiles */
-  .kpi-tile::after {
-    content: ''; position: absolute; top: 0; right: 0; width: 60%; height: 100%;
-    background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
-    pointer-events: none;
   }
 `;
 
@@ -434,69 +429,66 @@ const daysInTrade = (t) => {
 // (pattern_text + change_text stay empty; old data still loads if present)
 const emptyRecap = () => ({ positives: "", negatives: "" });
 
-// ═══ Neumorphic shared styles ═══
+// ═══ Shared styles — subtle, professional, white-dominant ═══
 const cardS = {
-  background: T.card, borderRadius: 20, border: "none",
-  boxShadow: T.shadowRaised, overflow: "hidden",
+  background: T.card, borderRadius: 16, border: "none",
+  boxShadow: T.shadowSm, overflow: "hidden",
 };
 const cardFlat = {
-  background: T.card, borderRadius: 16, border: "none",
-  boxShadow: T.shadowRaisedSm,
+  background: T.card, borderRadius: 14, border: "none",
+  boxShadow: T.shadowXs,
 };
 const cardInset = {
-  background: T.bg, borderRadius: 16, border: "none",
-  boxShadow: T.shadowInset,
+  background: T.cardSoft, borderRadius: 12, border: "none",
 };
 const inputS = {
-  width: "100%", padding: "12px 16px", fontSize: 14, fontFamily: font, color: T.text, fontWeight: 500,
-  background: T.bg, border: "none", borderRadius: 12,
-  boxShadow: T.shadowInsetSm, outline: "none", boxSizing: "border-box",
+  width: "100%", padding: "11px 14px", fontSize: 14, fontFamily: font, color: T.text, fontWeight: 500,
+  background: T.cardSoft, border: "none", borderRadius: 10,
+  outline: "none", boxSizing: "border-box",
+  transition: "background 120ms, box-shadow 120ms",
 };
 const selectS = {
   ...inputS, cursor: "pointer", appearance: "none",
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239A93B5'/%3E%3C/svg%3E")`,
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239694A8'/%3E%3C/svg%3E")`,
   backgroundRepeat: "no-repeat", backgroundPosition: "right 14px center", paddingRight: 32,
 };
 const btnP = {
-  padding: "12px 24px", fontSize: 13, fontWeight: 700, fontFamily: font, color: "#fff",
-  background: T.gradPurple, border: "none", borderRadius: 12,
+  padding: "11px 22px", fontSize: 13, fontWeight: 700, fontFamily: font, color: "#fff",
+  background: T.accent, border: "none", borderRadius: 10,
   boxShadow: T.shadowPurpleGlow, cursor: "pointer",
-  letterSpacing: 0.2, transition: "transform 120ms, box-shadow 120ms",
+  letterSpacing: 0.1, transition: "transform 120ms, box-shadow 120ms, filter 120ms",
 };
 const btnG = {
-  padding: "10px 18px", fontSize: 12, fontWeight: 600, fontFamily: font, color: T.textMid,
-  background: T.card, border: "none", borderRadius: 12,
-  boxShadow: T.shadowRaisedSm, cursor: "pointer",
+  padding: "10px 16px", fontSize: 12, fontWeight: 600, fontFamily: font, color: T.textMid,
+  background: T.card, border: `1px solid ${T.borderSubtle}`, borderRadius: 10,
+  cursor: "pointer", transition: "all 120ms",
 };
 const center = { display: "flex", alignItems: "center", justifyContent: "center" };
 
 const sidebarLinkStyle = (T) => ({
-  display: "block", width: "100%", padding: "10px 14px",
+  display: "block", width: "100%", padding: "9px 14px",
   background: "transparent", border: "none",
   color: T.textMid, fontSize: 12, fontFamily: font, fontWeight: 500, textAlign: "left",
-  cursor: "pointer", borderRadius: 10, marginBottom: 2,
+  cursor: "pointer", borderRadius: 8, marginBottom: 2,
 });
 
-// Gradient stat tile — the signature dashboard component
-const kpiTileStyle = (gradient, glow) => ({
-  padding: "18px 20px", background: gradient, color: "#fff",
-  borderRadius: 18, border: "none",
-  boxShadow: glow, minWidth: 140,
-  position: "relative", overflow: "hidden",
-});
-const kpiTileFlatStyle = {
-  padding: "18px 20px", background: T.card, borderRadius: 18,
-  boxShadow: T.shadowRaisedSm, minWidth: 140,
-};
-const kpiLabel = { fontSize: 10, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 700, marginBottom: 6, opacity: 0.85 };
-const kpiValue = { fontSize: 22, fontWeight: 800, fontFamily: font, lineHeight: 1, letterSpacing: -0.5 };
-
-// Small chip style for header (compact version)
-const kpiChipStyle = (T, borderColor) => ({
+// KPI chip in top bar — subtle raised
+const kpiChipStyle = (T, accentColor) => ({
   padding: "10px 14px", background: T.card,
-  borderRadius: 12, minWidth: 80,
-  boxShadow: T.shadowRaisedSm,
-  borderTop: `2px solid ${borderColor}`,
+  borderRadius: 10, minWidth: 92,
+  boxShadow: T.shadowXs,
+  border: `1px solid ${T.borderSubtle}`,
+  borderTop: `2px solid ${accentColor}`,
+});
+const kpiLabel = { fontSize: 10, letterSpacing: 1.1, textTransform: "uppercase", fontWeight: 700, marginBottom: 4, color: T.textLight };
+const kpiValue = { fontSize: 18, fontWeight: 800, fontFamily: font, lineHeight: 1, letterSpacing: -0.4 };
+
+// Gradient hero tile — for main dashboard
+const heroTileStyle = (gradient, glow) => ({
+  padding: "22px 24px", background: gradient, color: "#fff",
+  borderRadius: 18, border: "none",
+  boxShadow: glow,
+  position: "relative", overflow: "hidden",
 });
 
 function Pill({ text, type }) {
@@ -3872,74 +3864,77 @@ function downloadJSON() {
       {/* ═══════ SIDEBAR ═══════ */}
       {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="sidebar-backdrop" />}
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`} style={{
-        width: 260, background: T.bg,
+        width: 248, background: T.card,
         display: "flex", flexDirection: "column", flexShrink: 0,
         position: "sticky", top: 0, height: "100vh", zIndex: 100,
         padding: "20px 14px",
+        borderRight: `1px solid ${T.borderSubtle}`,
       }}>
-        {/* Logo — neumorphic raised gradient tile */}
-        <div style={{ padding: "6px 8px 22px", display: "flex", alignItems: "center", gap: 12 }}>
+        {/* Logo */}
+        <div style={{ padding: "4px 8px 22px", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{
-            width: 44, height: 44, borderRadius: 14,
+            width: 40, height: 40, borderRadius: 12,
             background: T.gradPurple,
             display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#fff", fontWeight: 800, fontSize: 20, letterSpacing: -1,
+            color: "#fff", fontWeight: 800, fontSize: 18, letterSpacing: -1,
             boxShadow: T.shadowPurpleGlow,
           }}>V</div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.text, letterSpacing: -0.3, lineHeight: 1 }}>Varmari</div>
-            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1.5, fontWeight: 600, textTransform: "uppercase", marginTop: 4 }}>Trading Journal</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.text, letterSpacing: -0.3, lineHeight: 1 }}>Varmari</div>
+            <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.5, fontWeight: 700, textTransform: "uppercase", marginTop: 4 }}>Trading Journal</div>
           </div>
         </div>
 
-        {/* Account chip — inset neumorphic */}
+        {/* Account chip */}
         {activeAccount && (
           <div onClick={() => setShowAccountModal(true)} style={{
             margin: "0 4px 20px", padding: "12px 14px",
-            background: T.bg, borderRadius: 14, cursor: "pointer",
-            boxShadow: T.shadowInsetSm,
+            background: T.cardSoft, borderRadius: 12, cursor: "pointer",
             display: "flex", alignItems: "center", gap: 10,
+            transition: "background 120ms",
           }}>
             <div style={{
               width: 8, height: 8, borderRadius: "50%",
               background: T.green, flexShrink: 0,
-              boxShadow: `0 0 8px ${T.greenGlow}`,
+              boxShadow: `0 0 0 3px ${T.greenBg}`,
             }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>Active Account</div>
+              <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.1, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>Active Account</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeAccount.name}</div>
             </div>
             <span style={{ color: T.textLight, fontSize: 10 }}>▼</span>
           </div>
         )}
 
-        {/* Nav — floating raised buttons for active */}
+        {/* Nav */}
         <nav style={{ padding: "0 4px", flex: 1, overflowY: "auto" }}>
           {["Journal", "Tools"].map(grp => {
             const items = NAV_ITEMS.filter(x => x.grp === grp);
             return (
-              <div key={grp} style={{ marginBottom: 18 }}>
-                <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 700, padding: "0 12px 8px" }}>{grp}</div>
+              <div key={grp} style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 700, padding: "0 12px 10px" }}>{grp}</div>
                 {items.map(item => {
                   const active = activeNavKey === item.k;
                   return (
                     <button key={item.k} onClick={() => goto(item.k)} style={{
                       width: "100%", display: "flex", alignItems: "center", gap: 12,
-                      padding: "12px 14px", marginBottom: 4,
-                      background: active ? T.card : "transparent",
+                      padding: "10px 14px", marginBottom: 3,
+                      background: active ? T.accentBg : "transparent",
                       color: active ? T.accent : T.textMid,
-                      border: "none", borderRadius: 12,
+                      border: "none", borderRadius: 10,
                       fontSize: 13, fontFamily: font, fontWeight: active ? 700 : 500,
                       textAlign: "left", cursor: "pointer",
-                      boxShadow: active ? T.shadowRaisedSm : "none",
-                      transition: "background 160ms, color 160ms",
+                      transition: "all 140ms",
+                      position: "relative",
                     }}>
+                      {active && <span style={{
+                        position: "absolute", left: 0, top: 8, bottom: 8, width: 3,
+                        background: T.accent, borderRadius: "0 3px 3px 0",
+                      }} />}
                       <span style={{
-                        fontSize: 15, width: 24, height: 24,
+                        fontSize: 14, width: 22, height: 22,
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        borderRadius: 8,
-                        background: active ? T.gradPurple : "transparent",
-                        color: active ? "#fff" : T.textMid,
+                        color: active ? T.accent : T.textLight,
                       }}>{item.icon}</span>
                       <span>{item.label}</span>
                     </button>
@@ -3950,11 +3945,10 @@ function downloadJSON() {
           })}
         </nav>
 
-        {/* Bottom actions — inset background */}
+        {/* Bottom actions */}
         <div style={{
-          padding: "12px 8px", marginTop: 8,
-          background: T.bg, borderRadius: 14,
-          boxShadow: T.shadowInsetSm,
+          padding: "10px 4px", marginTop: 8,
+          borderTop: `1px solid ${T.borderSubtle}`,
         }}>
           <button onClick={() => setShowPairsModal(true)} style={sidebarLinkStyle(T)}>⟡ Manage Pairs</button>
           <button onClick={() => setShowTradeTypesModal(true)} style={sidebarLinkStyle(T)}>⊞ Trade Types</button>
@@ -3967,10 +3961,11 @@ function downloadJSON() {
 
         {/* Slim top bar — page title + search + new trade + KPIs */}
         <div style={{
-          background: T.bg,
+          background: T.card,
           padding: "18px 28px",
           display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap",
           position: "sticky", top: 0, zIndex: 50,
+          borderBottom: `1px solid ${T.borderSubtle}`,
         }}>
           <button className="sidebar-toggle no-print" onClick={() => setSidebarOpen(true)} style={{
             display: "none", background: T.card, border: "none", cursor: "pointer",
@@ -4202,7 +4197,8 @@ function downloadJSON() {
                     )}
                   </div>
                 ) : (<>
-                  {/* HERO STRIP: Today / This Week / This Month */}
+
+                  {/* ═══ HERO ROW — 4 GRADIENT KPI TILES ═══ */}
                   {(() => {
                     const todayISO = isoDate(new Date());
                     const today = new Date();
@@ -4210,91 +4206,233 @@ function downloadJSON() {
                     const eow = endOfWeek(today);
                     const som = startOfMonth(today);
                     const eom = endOfMonth(today);
-                    const sowISO = isoDate(sow);
-                    const eowISO = isoDate(eow);
-                    const somISO = isoDate(som);
-                    const eomISO = isoDate(eom);
+                    const sowISO = isoDate(sow), eowISO = isoDate(eow);
+                    const somISO = isoDate(som), eomISO = isoDate(eom);
 
                     const todayTrades = trades.filter(t => t.date === todayISO);
                     const weekTrades = trades.filter(t => t.date >= sowISO && t.date <= eowISO);
                     const monthTrades = trades.filter(t => t.date >= somISO && t.date <= eomISO);
 
-                    const sumStats = (list) => {
-                      const w = list.filter(t => t.result === "Win").length;
-                      const l = list.filter(t => t.result === "Loss").length;
-                      const pnlPct = list.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
-                      const pnlUsd = list.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
-                      const wr = (w + l) > 0 ? (w / (w + l)) * 100 : null;
-                      const tradingDays = new Set(list.map(t => t.date)).size;
-                      return { n: list.length, w, l, pnlPct, pnlUsd, wr, tradingDays };
+                    const sumUsd = (list) => list.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
+                    const tdUsd = sumUsd(todayTrades);
+                    const wkUsd = sumUsd(weekTrades);
+                    const moUsd = sumUsd(monthTrades);
+                    const balance = (activeAccount.starting_balance || 0) + sumUsd(trades);
+
+                    // Mini sparkline data — last 14 days daily PnL
+                    const sparkDays = 14;
+                    const spark = [];
+                    for (let i = sparkDays - 1; i >= 0; i--) {
+                      const d = new Date(today); d.setDate(d.getDate() - i);
+                      const iso = isoDate(d);
+                      spark.push({ x: i, y: sumUsd(trades.filter(t => t.date === iso)) });
+                    }
+
+                    const HeroTile = ({ label, value, sub, gradient, glow, spark, positive }) => {
+                      const sparkMax = Math.max(...spark.map(p => Math.abs(p.y)), 1);
+                      const w = 100, h = 32;
+                      const pts = spark.map((p, i) => {
+                        const x = (i / (spark.length - 1)) * w;
+                        const y = h - (0.5 + (p.y / sparkMax) * 0.5) * h;
+                        return `${x.toFixed(1)},${y.toFixed(1)}`;
+                      }).join(" ");
+                      return (
+                        <div style={{ ...heroTileStyle(gradient, glow) }}>
+                          <div style={{ position: "relative", zIndex: 2 }}>
+                            <div style={{ fontSize: 11, letterSpacing: 1.3, textTransform: "uppercase", fontWeight: 700, opacity: 0.85, marginBottom: 8 }}>{label}</div>
+                            <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: -1, lineHeight: 1, marginBottom: 6, fontFamily: font }}>{value}</div>
+                            <div style={{ fontSize: 11, opacity: 0.85, fontWeight: 600 }}>{sub}</div>
+                          </div>
+                          <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{
+                            position: "absolute", right: 0, bottom: 0, width: "55%", height: 44, opacity: 0.4, pointerEvents: "none",
+                          }}>
+                            <defs>
+                              <linearGradient id={`sg-${label.replace(/\s/g, "")}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#fff" stopOpacity="0.6" />
+                                <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+                              </linearGradient>
+                            </defs>
+                            <polygon points={`0,${h} ${pts} ${w},${h}`} fill={`url(#sg-${label.replace(/\s/g, "")})`} />
+                            <polyline points={pts} fill="none" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+                          </svg>
+                          <div style={{
+                            position: "absolute", top: -20, right: -20, width: 100, height: 100,
+                            background: "rgba(255,255,255,0.1)", borderRadius: "50%",
+                          }} />
+                        </div>
+                      );
                     };
-                    const td = sumStats(todayTrades);
-                    const wk = sumStats(weekTrades);
-                    const mo = sumStats(monthTrades);
 
-                    const todayDate = today.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-                    const todayPositive = td.pnlUsd >= 0;
-                    const heroBg = td.n === 0 ? T.cardAlt : todayPositive ? T.greenBg : T.redBg;
-                    const heroBorder = td.n === 0 ? T.border : todayPositive ? "#A4D9B8" : "#F0B5AE";
-                    const heroAccent = td.n === 0 ? T.textMid : todayPositive ? T.green : T.red;
-                    const heroAccentDark = td.n === 0 ? T.text : todayPositive ? "#1F7A48" : "#A02A1F";
+                    const fmtMoney = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+                    return (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+                        <HeroTile
+                          label="Account Balance"
+                          value={`$${balance.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
+                          sub={`Start $${(activeAccount.starting_balance || 0).toLocaleString()}`}
+                          gradient={T.gradPurple}
+                          glow={T.shadowPurpleGlow}
+                          spark={spark}
+                        />
+                        <HeroTile
+                          label="Today"
+                          value={todayTrades.length === 0 ? "$0" : fmtMoney(tdUsd)}
+                          sub={`${todayTrades.length} ${todayTrades.length === 1 ? "trade" : "trades"} · ${today.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`}
+                          gradient={todayTrades.length === 0 ? T.gradPurple : (tdUsd >= 0 ? T.gradGreen : T.gradRed)}
+                          glow={todayTrades.length === 0 ? T.shadowPurpleGlow : (tdUsd >= 0 ? T.shadowGreenGlow : T.shadowRedGlow)}
+                          spark={spark}
+                        />
+                        <HeroTile
+                          label="This Week"
+                          value={weekTrades.length === 0 ? "$0" : fmtMoney(wkUsd)}
+                          sub={`${weekTrades.length} ${weekTrades.length === 1 ? "trade" : "trades"} · ${sow.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${eow.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
+                          gradient={weekTrades.length === 0 ? T.gradPurple : (wkUsd >= 0 ? T.gradGreen : T.gradRed)}
+                          glow={weekTrades.length === 0 ? T.shadowPurpleGlow : (wkUsd >= 0 ? T.shadowGreenGlow : T.shadowRedGlow)}
+                          spark={spark}
+                        />
+                        <HeroTile
+                          label="This Month"
+                          value={monthTrades.length === 0 ? "$0" : fmtMoney(moUsd)}
+                          sub={`${monthTrades.length} ${monthTrades.length === 1 ? "trade" : "trades"} · ${today.toLocaleDateString("en-GB", { month: "long" })}`}
+                          gradient={monthTrades.length === 0 ? T.gradPurple : (moUsd >= 0 ? T.gradGreen : T.gradRed)}
+                          glow={monthTrades.length === 0 ? T.shadowPurpleGlow : (moUsd >= 0 ? T.shadowGreenGlow : T.shadowRedGlow)}
+                          spark={spark}
+                        />
+                      </div>
+                    );
+                  })()}
 
-                    const heroFmt = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(2)}`;
-                    const heroFmtSmall = (n) => `${n >= 0 ? "+" : "−"}$${Math.abs(n).toFixed(0)}`;
+                  {/* ═══ GRAPHICAL STATS ROW — DONUTS + GAUGES ═══ */}
+                  {(() => {
+                    // Donut component (SVG)
+                    const Donut = ({ value, max, color, label, sublabel, size = 140 }) => {
+                      const strokeW = 14;
+                      const r = (size - strokeW) / 2;
+                      const c = 2 * Math.PI * r;
+                      const pct = max > 0 ? Math.min(1, value / max) : 0;
+                      const offset = c * (1 - pct);
+                      const cx = size / 2, cy = size / 2;
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                          <div style={{ position: "relative", width: size, height: size }}>
+                            <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+                              <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.cardSoft} strokeWidth={strokeW} />
+                              <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={strokeW}
+                                strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+                                style={{ transition: "stroke-dashoffset 600ms ease" }} />
+                            </svg>
+                            <div style={{
+                              position: "absolute", inset: 0,
+                              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                            }}>
+                              <div style={{ fontSize: 28, fontWeight: 800, color: T.text, letterSpacing: -0.6, fontFamily: font, lineHeight: 1 }}>{label}</div>
+                              {sublabel && <div style={{ fontSize: 10, color: T.textLight, marginTop: 4, letterSpacing: 0.5, fontWeight: 600 }}>{sublabel}</div>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    // Gauge (semi-circle)
+                    const Gauge = ({ value, min, max, color, label, sublabel, size = 160 }) => {
+                      const strokeW = 12;
+                      const r = (size - strokeW) / 2;
+                      const cx = size / 2, cy = size / 2 + r / 2;
+                      const half = Math.PI * r;
+                      const pct = max > min ? Math.max(0, Math.min(1, (value - min) / (max - min))) : 0;
+                      const offset = half * (1 - pct);
+                      const arcPath = `M ${strokeW/2} ${cy} A ${r} ${r} 0 0 1 ${size - strokeW/2} ${cy}`;
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                          <div style={{ position: "relative", width: size, height: size / 2 + strokeW }}>
+                            <svg width={size} height={size / 2 + strokeW}>
+                              <path d={arcPath} fill="none" stroke={T.cardSoft} strokeWidth={strokeW} strokeLinecap="round" />
+                              <path d={arcPath} fill="none" stroke={color} strokeWidth={strokeW} strokeLinecap="round"
+                                strokeDasharray={half} strokeDashoffset={offset}
+                                style={{ transition: "stroke-dashoffset 600ms ease" }} />
+                            </svg>
+                            <div style={{
+                              position: "absolute", left: 0, right: 0, bottom: 6,
+                              textAlign: "center",
+                            }}>
+                              <div style={{ fontSize: 26, fontWeight: 800, color: T.text, letterSpacing: -0.6, fontFamily: font, lineHeight: 1 }}>{label}</div>
+                              {sublabel && <div style={{ fontSize: 10, color: T.textLight, marginTop: 3, letterSpacing: 0.5, fontWeight: 600 }}>{sublabel}</div>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    const wr = S.wr;
+                    const wrColor = wr == null ? T.textLight : wr >= 55 ? T.green : wr >= 40 ? T.amber : T.red;
+                    const rr = S.avgRealizedR;
+                    const rrColor = rr == null ? T.textLight : rr >= 1.5 ? T.green : rr >= 1 ? T.amber : T.red;
+                    const pf = S.pf;
+                    const pfColor = pf == null ? T.textLight : pf >= 2 ? T.green : pf >= 1.2 ? T.amber : T.red;
 
                     return (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-                        {/* TODAY — hero card with color */}
-                        <div style={{ background: heroBg, border: `0.5px solid ${heroBorder}`, borderRadius: 14, padding: "18px 20px", flex: "1.6" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                            <div style={{ fontSize: 11, color: heroAccent, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 600 }}>Today</div>
-                            <div style={{ fontSize: 11, color: T.textMid }}>{todayDate}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+                        {/* WIN RATE DONUT */}
+                        <div style={{ ...cardS, padding: "24px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 800, marginBottom: 4 }}>Win Rate</div>
+                              <div style={{ fontSize: 12, color: T.textMid, fontWeight: 500 }}>{S.w} wins · {S.l} losses{S.be ? ` · ${S.be} BE` : ""}</div>
+                            </div>
                           </div>
-                          <div style={{ fontSize: 36, color: heroAccentDark, fontWeight: 600, letterSpacing: -1.2, lineHeight: 1 }}>
-                            {td.n === 0 ? "$0.00" : heroFmt(td.pnlUsd)}
-                          </div>
-                          <div style={{ display: "flex", gap: 12, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
-                            {td.n === 0 ? (
-                              <span style={{ color: T.textMid, fontStyle: "italic" }}>No trades yet — plan first, trade later</span>
-                            ) : (
-                              <>
-                                <span style={{ color: heroAccent }}>{fP(td.pnlPct)}</span>
-                                <span style={{ color: T.textMid }}>·</span>
-                                <span style={{ color: T.textMid }}>{td.n} {td.n === 1 ? "trade" : "trades"}</span>
-                                {td.wr != null && (<>
-                                  <span style={{ color: T.textMid }}>·</span>
-                                  <span style={{ color: T.textMid }}>{td.wr.toFixed(0)}% win</span>
-                                </>)}
-                              </>
-                            )}
+                          <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
+                            <Donut
+                              value={wr || 0}
+                              max={100}
+                              color={wrColor}
+                              label={wr == null ? "—" : `${wr.toFixed(0)}%`}
+                              sublabel={wr == null ? "no trades" : `of ${S.w + S.l} settled`}
+                              size={150}
+                            />
                           </div>
                         </div>
 
-                        {/* THIS WEEK */}
-                        <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: "18px 20px" }}>
-                          <div style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>This week</div>
-                          <div style={{ fontSize: 26, color: wk.n === 0 ? T.textMid : (wk.pnlUsd >= 0 ? T.green : T.red), fontWeight: 600, letterSpacing: -0.8, lineHeight: 1 }}>
-                            {wk.n === 0 ? "$0" : heroFmtSmall(wk.pnlUsd)}
+                        {/* AVG R:R GAUGE */}
+                        <div style={{ ...cardS, padding: "24px" }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 800, marginBottom: 4 }}>Avg R:R Realized</div>
+                            <div style={{ fontSize: 12, color: T.textMid, fontWeight: 500 }}>How much you actually capture per trade</div>
                           </div>
-                          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
-                            <span style={{ color: T.textMid }}>{wk.tradingDays} {wk.tradingDays === 1 ? "day" : "days"}</span>
-                            <span style={{ color: T.textMid }}>·</span>
-                            <span style={{ color: T.textMid }}>{wk.n} {wk.n === 1 ? "trade" : "trades"}</span>
+                          <div style={{ marginTop: 20, display: "flex", justifyContent: "center" }}>
+                            <Gauge
+                              value={rr || 0}
+                              min={0}
+                              max={3}
+                              color={rrColor}
+                              label={rr == null ? "—" : `${rr.toFixed(2)}R`}
+                              sublabel={rr == null ? "no data" : rr >= 1.5 ? "strong edge" : rr >= 1 ? "positive" : "below 1R"}
+                              size={180}
+                            />
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: T.textLight, fontWeight: 700, marginTop: 4, padding: "0 20px" }}>
+                            <span>0R</span><span>1.5R</span><span>3R+</span>
                           </div>
                         </div>
 
-                        {/* THIS MONTH */}
-                        <div style={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 14, padding: "18px 20px" }}>
-                          <div style={{ fontSize: 11, color: T.textLight, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>This month</div>
-                          <div style={{ fontSize: 26, color: mo.n === 0 ? T.textMid : (mo.pnlUsd >= 0 ? T.green : T.red), fontWeight: 600, letterSpacing: -0.8, lineHeight: 1 }}>
-                            {mo.n === 0 ? "$0" : heroFmtSmall(mo.pnlUsd)}
+                        {/* PROFIT FACTOR GAUGE */}
+                        <div style={{ ...cardS, padding: "24px" }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 800, marginBottom: 4 }}>Profit Factor</div>
+                            <div style={{ fontSize: 12, color: T.textMid, fontWeight: 500 }}>Total wins ÷ total losses</div>
                           </div>
-                          <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
-                            <span style={{ color: mo.pnlPct >= 0 ? T.green : T.red }}>{fP(mo.pnlPct)}</span>
-                            {mo.wr != null && (<>
-                              <span style={{ color: T.textMid }}>·</span>
-                              <span style={{ color: mo.wr >= 50 ? T.green : T.red }}>{mo.wr.toFixed(0)}% WR</span>
-                            </>)}
+                          <div style={{ marginTop: 20, display: "flex", justifyContent: "center" }}>
+                            <Gauge
+                              value={pf == null || !isFinite(pf) ? 0 : pf}
+                              min={0}
+                              max={3}
+                              color={pfColor}
+                              label={pf == null ? "—" : !isFinite(pf) ? "∞" : pf.toFixed(2)}
+                              sublabel={pf == null ? "no data" : !isFinite(pf) ? "all wins!" : pf >= 2 ? "excellent" : pf >= 1.2 ? "profitable" : "losing"}
+                              size={180}
+                            />
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: T.textLight, fontWeight: 700, marginTop: 4, padding: "0 20px" }}>
+                            <span>0</span><span>1.5</span><span>3+</span>
                           </div>
                         </div>
                       </div>
@@ -4379,53 +4517,60 @@ function downloadJSON() {
                     );
                   })()}
 
-                  {/* EQUITY CURVE — slim sparkline showing cumulative balance over time */}
+                  {/* ═══ EQUITY CURVE — hero-sized chart with axis, gradient fill ═══ */}
                   {S.eq && S.eq.length > 1 && (
-                    <div style={{ ...cardS, padding: "16px 20px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ fontSize: 11, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontFamily: mono }}>Equity Curve</span>
-                          <span style={{ fontSize: 11, color: T.textMid, fontFamily: mono }}>{S.eq.length - 1} {S.eq.length - 1 === 1 ? "trade" : "trades"}</span>
+                    <div style={{ ...cardS, padding: "24px 24px 12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 16 }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 800, marginBottom: 6 }}>Equity Curve</div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 30, fontWeight: 800, color: T.text, letterSpacing: -0.8, fontFamily: font, lineHeight: 1 }}>
+                              ${(S.base + S.tUsd).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                            </span>
+                            <span style={{
+                              padding: "5px 12px", borderRadius: 8, fontSize: 13, fontWeight: 800,
+                              background: S.tUsd >= 0 ? T.greenBg : T.redBg,
+                              color: S.tUsd >= 0 ? T.green : T.red,
+                            }}>
+                              {S.tUsd >= 0 ? "+" : "−"}${Math.abs(S.tUsd).toLocaleString("en-US", { maximumFractionDigits: 0 })} ({S.tPnl >= 0 ? "+" : ""}{S.tPnl.toFixed(2)}%)
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: T.textMid, marginTop: 8, fontWeight: 500 }}>
+                            Started at ${S.base.toLocaleString("en-US", { maximumFractionDigits: 0 })} · {S.eq.length - 1} {S.eq.length - 1 === 1 ? "trade" : "trades"} · Peak ${(S.base + (S.peak || 0)).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                          </div>
                         </div>
-                        <div style={{ display: "flex", gap: 14, fontSize: 11, fontFamily: mono, alignItems: "baseline" }}>
-                          <div>
-                            <span style={{ color: T.textLight }}>Start </span>
-                            <span style={{ color: T.text, fontWeight: 600 }}>${S.base.toFixed(0)}</span>
+                        {S.currentDD > 0 && (
+                          <div style={{
+                            padding: "10px 14px", background: T.redBg, borderRadius: 12, minWidth: 120,
+                          }}>
+                            <div style={{ fontSize: 9, color: T.red, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 800, marginBottom: 4 }}>Current Drawdown</div>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: T.red, letterSpacing: -0.4 }}>−${S.currentDD.toFixed(0)}</div>
+                            <div style={{ fontSize: 10, color: T.red, opacity: 0.75, fontWeight: 600 }}>{S.currentDDpct?.toFixed(1)}% · {S.daysSincePeak}d from peak</div>
                           </div>
-                          <div>
-                            <span style={{ color: T.textLight }}>Now </span>
-                            <span style={{ color: S.tUsd >= 0 ? T.green : T.red, fontWeight: 700 }}>${(S.base + S.tUsd).toFixed(0)}</span>
-                          </div>
-                          <div>
-                            <span style={{ color: T.textLight }}>P&L </span>
-                            <span style={{ color: S.tUsd >= 0 ? T.green : T.red, fontWeight: 700 }}>{S.tUsd >= 0 ? "+" : "−"}${Math.abs(S.tUsd).toFixed(0)}</span>
-                            <span style={{ color: S.tPnl >= 0 ? T.green : T.red, marginLeft: 4 }}>({S.tPnl >= 0 ? "+" : ""}{S.tPnl.toFixed(2)}%)</span>
-                          </div>
-                          {S.peak > 0 && (
-                            <div>
-                              <span style={{ color: T.textLight }}>Peak </span>
-                              <span style={{ color: T.text, fontWeight: 600 }}>${(S.base + S.peak).toFixed(0)}</span>
-                            </div>
-                          )}
-                        </div>
+                        )}
                       </div>
-                      <ResponsiveContainer width="100%" height={130}>
-                        <AreaChart data={S.eq} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <AreaChart data={S.eq} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                           <defs>
-                            <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor={S.tUsd >= 0 ? T.green : T.red} stopOpacity={0.25}/>
-                              <stop offset="100%" stopColor={S.tUsd >= 0 ? T.green : T.red} stopOpacity={0.0}/>
+                            <linearGradient id="eqGradPos" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={T.green} stopOpacity={0.35}/>
+                              <stop offset="100%" stopColor={T.green} stopOpacity={0.0}/>
+                            </linearGradient>
+                            <linearGradient id="eqGradNeg" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={T.red} stopOpacity={0.35}/>
+                              <stop offset="100%" stopColor={T.red} stopOpacity={0.0}/>
                             </linearGradient>
                           </defs>
-                          <XAxis dataKey="date" hide />
-                          <YAxis domain={[S.yMin, S.yMax]} hide />
+                          <CartesianGrid strokeDasharray="3 3" stroke={T.borderSubtle} vertical={false} />
+                          <XAxis dataKey="date" tick={{ fill: T.textLight, fontSize: 10, fontFamily: font }} axisLine={{ stroke: T.borderSubtle }} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis domain={[S.yMin, S.yMax]} tick={{ fill: T.textLight, fontSize: 10, fontFamily: font }} axisLine={false} tickLine={false} width={60} tickFormatter={(v) => `$${(v/1000).toFixed(1)}k`} />
                           <Tooltip
-                            contentStyle={{ background: T.card, border: `0.5px solid ${T.border}`, borderRadius: 6, fontSize: 11, padding: "6px 10px", fontFamily: mono }}
-                            labelStyle={{ color: T.textMid, fontSize: 10 }}
-                            formatter={(val) => [`$${val.toFixed(0)}`, "Balance"]}
+                            contentStyle={{ background: T.card, border: "none", borderRadius: 10, fontSize: 12, padding: "10px 14px", boxShadow: T.shadowLg, fontFamily: font }}
+                            labelStyle={{ color: T.textMid, fontSize: 10, fontWeight: 700, marginBottom: 4 }}
+                            formatter={(val) => [`$${val.toLocaleString("en-US", { maximumFractionDigits: 0 })}`, "Balance"]}
                           />
-                          <ReferenceLine y={S.base} stroke={T.border} strokeDasharray="3 3" strokeWidth={1} />
-                          <Area type="monotone" dataKey="balance" stroke={S.tUsd >= 0 ? T.green : T.red} strokeWidth={1.8} fill="url(#eqGrad)" dot={false} activeDot={{ r: 3, fill: S.tUsd >= 0 ? T.green : T.red }} />
+                          <ReferenceLine y={S.base} stroke={T.textLight} strokeDasharray="4 4" strokeWidth={1} label={{ value: "Start", position: "insideLeft", fill: T.textLight, fontSize: 10, fontWeight: 700 }} />
+                          <Area type="monotone" dataKey="balance" stroke={S.tUsd >= 0 ? T.green : T.red} strokeWidth={2.5} fill={S.tUsd >= 0 ? "url(#eqGradPos)" : "url(#eqGradNeg)"} dot={false} activeDot={{ r: 5, fill: S.tUsd >= 0 ? T.green : T.red, strokeWidth: 3, stroke: "#fff" }} />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
@@ -4972,10 +5117,21 @@ function downloadJSON() {
                 </div>
                 <div style={{ ...cardS, padding: 12 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                    <div style={{ display: "flex", gap: 0, marginRight: 4 }}>
-                      <button onClick={() => setGroupBy("none")} style={{ ...btnG, padding: "7px 12px", fontSize: 11, background: groupBy === "none" ? T.accent : "transparent", color: groupBy === "none" ? "#fff" : T.textMid, borderColor: groupBy === "none" ? T.accent : T.border, borderRadius: "8px 0 0 8px" }}>All</button>
-                      <button onClick={() => setGroupBy("week")} style={{ ...btnG, padding: "7px 12px", fontSize: 11, background: groupBy === "week" ? T.accent : "transparent", color: groupBy === "week" ? "#fff" : T.textMid, borderColor: groupBy === "week" ? T.accent : T.border, borderLeft: "none", borderRight: "none", borderRadius: 0 }}>By Week</button>
-                      <button onClick={() => setGroupBy("month")} style={{ ...btnG, padding: "7px 12px", fontSize: 11, background: groupBy === "month" ? T.accent : "transparent", color: groupBy === "month" ? "#fff" : T.textMid, borderColor: groupBy === "month" ? T.accent : T.border, borderRadius: "0 8px 8px 0" }}>By Month</button>
+                    <div style={{ display: "flex", background: T.cardSoft, padding: 4, borderRadius: 10, marginRight: 8 }}>
+                      {[
+                        { k: "none", l: "All" },
+                        { k: "week", l: "By Week" },
+                        { k: "month", l: "By Month" },
+                      ].map(g => (
+                        <button key={g.k} onClick={() => setGroupBy(g.k)} style={{
+                          padding: "7px 14px", fontSize: 11, fontWeight: 700, fontFamily: font,
+                          background: groupBy === g.k ? T.card : "transparent",
+                          color: groupBy === g.k ? T.accent : T.textMid,
+                          border: "none", borderRadius: 7, cursor: "pointer",
+                          boxShadow: groupBy === g.k ? T.shadowXs : "none",
+                          transition: "all 120ms",
+                        }}>{g.l}</button>
+                      ))}
                     </div>
                     <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ ...inputS, width: 160, fontSize: 11, padding: "7px 10px" }} />
                     <select value={fPair} onChange={e => setFPair(e.target.value)} style={{ ...selectS, width: 120, fontSize: 11, padding: "7px 10px" }}><option value="All">All Pairs</option>{pairNames.map(p => <option key={p} value={p}>{p}</option>)}</select>
@@ -4992,13 +5148,13 @@ function downloadJSON() {
                   </div>
                 </div>
                 <div className="scroll-x" style={{ ...cardS }}>
-                  <table className="tl-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: mono }}>
-                    <thead><tr style={{ background: T.cardAlt }}>
+                  <table className="tl-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: font }}>
+                    <thead><tr style={{ background: T.cardSoft }}>
                       {[{ k: "date", l: "Date" }, { k: "day", l: "Day" }, { k: "session", l: "Session" }, { k: "pair", l: "Pair" }, { k: "direction", l: "Dir" }, { k: "risk", l: "Risk" }, { k: "entry", l: "Entry" }, { k: "exit", l: "Exit" }, { k: "rr", l: "R:R" }, { k: "max_r", l: "Max R" }, { k: "max_adverse_r", l: "Rev R" }, { k: "pnl_pct", l: "PnL" }, { k: "result", l: "Result" }].map(c => (
-                        <th key={c.k} onClick={() => toggleSort(c.k)} style={{ textAlign: "left", padding: "10px 7px", color: T.textLight, fontSize: 9, letterSpacing: 0.8, textTransform: "uppercase", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", borderBottom: `1px solid ${T.border}`, fontFamily: mono }}>{c.l}{sortCol === c.k ? (sortDir === "asc" ? " ↑" : " ↓") : ""}</th>
+                        <th key={c.k} onClick={() => toggleSort(c.k)} style={{ textAlign: "left", padding: "12px 8px", color: T.textLight, fontSize: 9, letterSpacing: 1.2, textTransform: "uppercase", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", fontWeight: 800, fontFamily: font }}>{c.l}{sortCol === c.k ? (sortDir === "asc" ? " ↑" : " ↓") : ""}</th>
                       ))}
-                      <th style={{ padding: "10px 7px", color: T.textLight, fontSize: 9, borderBottom: `1px solid ${T.border}`, fontFamily: mono }}>LINKS</th>
-                      <th style={{ padding: "10px 7px", width: 55, borderBottom: `1px solid ${T.border}` }}></th>
+                      <th style={{ padding: "12px 8px", color: T.textLight, fontSize: 9, fontWeight: 800, letterSpacing: 1.2 }}>LINKS</th>
+                      <th style={{ padding: "12px 8px", width: 90 }}></th>
                     </tr></thead>
                     <tbody>
                       {(() => {
@@ -5053,20 +5209,50 @@ function downloadJSON() {
                             const gUsd = g.trades.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
 
                             rows.push(
-                              <tr key={"hdr-" + g.key} style={{ background: T.cardAlt, borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
-                                <td colSpan={15} style={{ padding: "10px 12px", color: T.text, fontFamily: mono, fontSize: 11, letterSpacing: 0.5 }}>
-                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-                                    <span style={{ fontWeight: 700 }}>
-                                      {groupBy === "week" ? "📅 " : "🗓️ "}{labelFor(g.key)}
-                                    </span>
-                                    <div style={{ display: "flex", gap: 14, fontSize: 11, alignItems: "center", flexWrap: "wrap" }}>
-                                      <span style={{ background: T.card, padding: "2px 8px", borderRadius: 4, color: T.textMid, border: `0.5px solid ${T.border}` }}>{gN} {gN === 1 ? "trade" : "trades"}</span>
-                                      <span style={{ color: T.green }}>{gW}W</span>
-                                      <span style={{ color: T.red }}>{gL}L</span>
-                                      {gBE > 0 && <span style={{ color: T.textLight }}>{gBE}BE</span>}
-                                      <span style={{ color: gWR >= 50 ? T.green : T.red, fontWeight: 600 }}>{(gW + gL) > 0 ? `${gWR.toFixed(0)}%` : "—"}</span>
-                                      <span style={{ color: gPnl >= 0 ? T.green : T.red, fontWeight: 700 }}>{fP(gPnl)}</span>
-                                      <span style={{ color: gUsd >= 0 ? T.green : T.red, fontWeight: 600 }}>{fU(gUsd)}</span>
+                              <tr key={"hdr-" + g.key} style={{ background: T.accentBg }}>
+                                <td colSpan={15} style={{ padding: 0, borderTop: `2px solid ${T.accent}` }}>
+                                  <div style={{
+                                    padding: "14px 18px",
+                                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                                    flexWrap: "wrap", gap: 14,
+                                  }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                      <div style={{
+                                        width: 36, height: 36, borderRadius: 10,
+                                        background: T.gradPurple,
+                                        display: "flex", alignItems: "center", justifyContent: "center",
+                                        color: "#fff", fontSize: 15, fontWeight: 800,
+                                        boxShadow: T.shadowPurpleGlow,
+                                        flexShrink: 0,
+                                      }}>{groupBy === "week" ? "W" : "M"}</div>
+                                      <div>
+                                        <div style={{ fontSize: 9, color: T.accent, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 800, marginBottom: 2 }}>
+                                          {groupBy === "week" ? "Week Group" : "Month Group"}
+                                        </div>
+                                        <div style={{ fontSize: 14, fontWeight: 800, color: T.text, letterSpacing: -0.2 }}>{labelFor(g.key)}</div>
+                                      </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                      <div style={{ background: T.card, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, color: T.textMid, boxShadow: T.shadowXs }}>
+                                        {gN} {gN === 1 ? "trade" : "trades"}
+                                      </div>
+                                      <div style={{ background: T.card, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, color: T.green, boxShadow: T.shadowXs }}>
+                                        {gW}W
+                                      </div>
+                                      <div style={{ background: T.card, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, color: T.red, boxShadow: T.shadowXs }}>
+                                        {gL}L
+                                      </div>
+                                      {gBE > 0 && (
+                                        <div style={{ background: T.card, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, color: T.textLight, boxShadow: T.shadowXs }}>
+                                          {gBE}BE
+                                        </div>
+                                      )}
+                                      <div style={{ background: T.card, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 800, color: gWR >= 50 ? T.green : T.red, boxShadow: T.shadowXs }}>
+                                        {(gW + gL) > 0 ? `${gWR.toFixed(0)}%` : "—"} WR
+                                      </div>
+                                      <div style={{ background: gPnl >= 0 ? T.green : T.red, padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 800, color: "#fff", boxShadow: gPnl >= 0 ? T.shadowGreenGlow : T.shadowRedGlow }}>
+                                        {fP(gPnl)} · {fU(gUsd)}
+                                      </div>
                                     </div>
                                   </div>
                                 </td>
@@ -5076,7 +5262,7 @@ function downloadJSON() {
                           g.trades.forEach(t => {
                             const i = rowIndex++;
                             rows.push(
-                              <tr key={t.id} style={{ background: i % 2 === 0 ? T.card : T.cardAlt }}>
+                              <tr key={t.id} style={{ background: T.card, borderBottom: `1px solid ${T.borderSubtle}` }}>
                                 <td style={{ padding: "8px 7px", whiteSpace: "nowrap", borderBottom: `1px solid ${T.borderLight}` }}>
                                   {t.date}
                                   {(() => {
