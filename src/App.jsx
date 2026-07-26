@@ -47,17 +47,25 @@ const useIsMobile = () => {
 // Global responsive CSS — injected once. Handles print + mobile fixes that
 // can't be done via inline styles (media queries, ::-webkit-scrollbar, etc.)
 const GLOBAL_CSS = `
-  html, body, #root { overflow-x: hidden; }
-  body { -webkit-text-size-adjust: 100%; }
+  html, body, #root { overflow-x: hidden; background: #FBFAF6; }
+  body { -webkit-text-size-adjust: 100%; margin: 0; }
   input, select, textarea { font-size: 16px !important; } /* prevent iOS zoom on focus */
   @media (min-width: 720px) { input, select, textarea { font-size: 13px !important; } }
   button { touch-action: manipulation; }
   * { -webkit-tap-highlight-color: transparent; }
 
-  /* Scrollable containers with visible scrollbars on mobile */
+  /* Scrollable containers with visible scrollbars */
   .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .scroll-x::-webkit-scrollbar { height: 4px; }
   .scroll-x::-webkit-scrollbar-thumb { background: #C9714080; border-radius: 2px; }
+
+  /* Sidebar backdrop only shows on mobile */
+  .sidebar-backdrop { display: none; }
+
+  /* Desktop: sidebar always visible, backdrop hidden */
+  @media (min-width: 900px) {
+    .sidebar-toggle { display: none !important; }
+  }
 
   /* Trade Log table — allow horizontal scroll below 720 */
   @media (max-width: 719px) {
@@ -72,11 +80,31 @@ const GLOBAL_CSS = `
     .modal-mobile { padding: 0 !important; }
     .modal-mobile-inner { max-width: 100% !important; width: 100% !important; max-height: 100vh !important; height: 100vh !important; border-radius: 0 !important; }
     .full-w-mobile { width: 100% !important; max-width: 100% !important; }
+    .hide-mobile { display: none !important; }
+    .kpi-chips { order: 3; width: 100%; margin-left: 0 !important; }
+  }
+
+  /* Mobile: sidebar becomes slide-out drawer */
+  @media (max-width: 899px) {
+    .sidebar-toggle { display: inline-flex !important; }
+    .sidebar {
+      position: fixed !important;
+      top: 0; left: 0; height: 100vh !important;
+      transform: translateX(-100%);
+      transition: transform 200ms ease;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+    }
+    .sidebar.sidebar-open { transform: translateX(0); }
+    .sidebar-backdrop {
+      display: block !important;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5); z-index: 99;
+    }
   }
 
   /* Print rules */
   @media print {
-    .no-print { display: none !important; }
+    .no-print, .sidebar, .sidebar-toggle { display: none !important; }
     body { background: #fff !important; }
   }
 `;
@@ -338,6 +366,21 @@ const selectS = {
 const btnP = { padding: "9px 20px", fontSize: 12, fontWeight: 600, fontFamily: font, color: "#fff", background: T.accent, border: "none", borderRadius: 8, cursor: "pointer" };
 const btnG = { padding: "8px 14px", fontSize: 12, fontWeight: 500, fontFamily: font, color: T.textMid, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 8, cursor: "pointer" };
 const center = { display: "flex", alignItems: "center", justifyContent: "center" };
+
+const sidebarLinkStyle = (T) => ({
+  display: "block", width: "100%", padding: "7px 12px",
+  background: "transparent", border: "none",
+  color: T.textMid, fontSize: 12, fontFamily: font, textAlign: "left",
+  cursor: "pointer", borderRadius: 6, marginBottom: 1,
+});
+const kpiChipStyle = (T, borderColor) => ({
+  padding: "6px 12px", background: T.cardAlt,
+  border: `1px solid ${T.border}`,
+  borderLeft: `3px solid ${borderColor}`,
+  borderRadius: 8, minWidth: 74,
+});
+const kpiLabel = { fontSize: 9, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 };
+const kpiValue = { fontSize: 14, fontWeight: 700, fontFamily: mono, lineHeight: 1 };
 
 function Pill({ text, type }) {
   const m = { Win: [T.greenBg, T.green], Loss: [T.redBg, T.red], Breakeven: [T.cardAlt, T.textMid], Long: [T.greenBg, T.green], Short: [T.redBg, T.red], pair: [T.accentBg, T.accent], session: [T.blueBg, T.blue], bias: [T.purpleBg, T.purple] };
@@ -1777,7 +1820,7 @@ function MissedTradesPage({ user, activeAccount }) {
               <textarea value={form.setup_notes} onChange={e => setForm({ ...form, setup_notes: e.target.value })} style={{ ...inputS, minHeight: 100, fontFamily: font, resize: "vertical" }} />
             </Field>
             <Field label="Reason for Missing (be honest)">
-              <textarea value={form.reason_missed} onChange={e => setForm({ ...form, reason_missed: e.target.value })} style={{ ...inputS, minHeight: 100, fontFamily: font, resize: "vertical" }} placeholder="fear / distracted / oversized prev loss / etc." />
+              <textarea value={form.reason_missed} onChange={e => setForm({ ...form, reason_missed: e.target.value })} style={{ ...inputS, minHeight: 100, fontFamily: font, resize: "vertical" }} />
             </Field>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -2563,7 +2606,7 @@ function RecapTab({ user, accounts, activeAccount, lockedPeriodType }) {
           {/* REFINE (was Positives) — saves to recap.positives */}
           <div style={sectionStyle(T.green)}>
             <div style={sectionLabel(T.green)}>✓ Refine</div>
-            <textarea value={recap.positives} onChange={e => setRecap({ ...recap, positives: e.target.value })} rows={10} placeholder="What's working that you want to keep doing — strong setups, good discipline, profitable patterns to refine and build on..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 220, background: T.cardAlt }} />
+            <textarea value={recap.positives} onChange={e => setRecap({ ...recap, positives: e.target.value })} rows={10} style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 220, background: T.cardAlt }} />
           </div>
           {/* MISTAKES — auto-filled trade mistakes (read-only) + editable area for period-level notes */}
           <div style={sectionStyle(T.red)}>
@@ -3646,36 +3689,197 @@ function downloadJSON() {
 
   if (loading) return <div style={{ minHeight: "100vh", background: T.bg, ...center, color: T.textMid, fontFamily: mono }}>Loading...</div>;
 
+  // Sidebar nav items — sub-tabs of Daily are hoisted to top-level for cleaner nav
+  const NAV_ITEMS = [
+    { k: "journal:dashboard", icon: "◈", label: "Dashboard", grp: "Journal" },
+    { k: "journal:log", icon: "▤", label: "Trade Log", grp: "Journal" },
+    { k: "journal:recap:daily", icon: "◐", label: "Daily Plan", grp: "Journal" },
+    { k: "journal:recap:missed", icon: "⊘", label: "Missed Trades", grp: "Journal" },
+    { k: "journal:recap:weekly", icon: "◑", label: "Weekly Recap", grp: "Journal" },
+    { k: "journal:recap:monthly", icon: "◓", label: "Monthly Recap", grp: "Journal" },
+    { k: "journal:discipline", icon: "▦", label: "Discipline", grp: "Journal" },
+    { k: "calculator", icon: "◇", label: "Position Calculator", grp: "Tools" },
+  ];
+
+  // Compute today's / month's / all-time PnL for the top-bar chips
+  const kpi = useMemo(() => {
+    if (!activeAccount) return null;
+    const todayISO = isoDate(new Date());
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+    let todayUsd = 0, monthUsd = 0, totalUsd = 0;
+    let wins = 0, losses = 0;
+    trades.forEach(t => {
+      const u = parseFloat(t.pnl_usd) || 0;
+      totalUsd += u;
+      if (t.date === todayISO) todayUsd += u;
+      if ((t.date || "").startsWith(monthKey)) monthUsd += u;
+      if (t.result === "Win") wins++;
+      else if (t.result === "Loss") losses++;
+    });
+    const balance = (activeAccount.starting_balance || 0) + totalUsd;
+    const wr = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : null;
+    return { balance, todayUsd, monthUsd, totalUsd, wr, wins, losses, n: trades.length };
+  }, [activeAccount, trades]);
+
+  // Current active nav key for highlight
+  const activeNavKey = useMemo(() => {
+    if (page === "calculator") return "calculator";
+    if (tab === "dashboard") return "journal:dashboard";
+    if (tab === "log") return "journal:log";
+    if (tab === "discipline") return "journal:discipline";
+    if (tab === "recap") return `journal:recap:${dailySubTab}`;
+    return "journal:dashboard";
+  }, [page, tab, dailySubTab]);
+
+  const goto = (k) => {
+    if (k === "calculator") { setPage("calculator"); return; }
+    setPage("journal");
+    if (k === "journal:dashboard") setTab("dashboard");
+    else if (k === "journal:log") setTab("log");
+    else if (k === "journal:discipline") setTab("discipline");
+    else if (k.startsWith("journal:recap:")) { setTab("recap"); setDailySubTab(k.split(":")[2]); }
+    setSidebarOpen(false); // close mobile drawer on nav
+  };
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const currentNavItem = NAV_ITEMS.find(x => x.k === activeNavKey) || NAV_ITEMS[0];
+
   return (
-    <div style={{ background: T.bg, minHeight: "100vh", fontFamily: font, color: T.text }}>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <div style={{ background: T.headerBg, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, borderBottom: `0.5px solid ${T.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 0" }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.accent }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: T.text, letterSpacing: 1.5 }}>VARMARI</span>
-          </div>
-          <div style={{ display: "flex" }}>
-            <button onClick={() => setPage("journal")} style={navStyle(page === "journal")}>Trading Journal</button>
-            <button onClick={() => setPage("calculator")} style={navStyle(page === "calculator")}>Position Calculator</button>
+    <div style={{ background: T.bg, minHeight: "100vh", fontFamily: font, color: T.text, display: "flex" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+      {/* ═══════ SIDEBAR ═══════ */}
+      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="sidebar-backdrop" />}
+      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`} style={{
+        width: 240, background: T.card, borderRight: `1px solid ${T.border}`,
+        display: "flex", flexDirection: "column", flexShrink: 0,
+        position: "sticky", top: 0, height: "100vh", zIndex: 100,
+      }}>
+        {/* Logo */}
+        <div style={{ padding: "22px 20px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #B05F2E)`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 15, letterSpacing: -0.5, boxShadow: `0 2px 6px ${T.accent}40` }}>V</div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, letterSpacing: 0.5, lineHeight: 1 }}>VARMARI</div>
+            <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.5, fontWeight: 600, textTransform: "uppercase", marginTop: 3 }}>Trading Journal</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "12px 0", flexWrap: "wrap" }}>
-          {page === "journal" && activeAccount && (
-            <>
-              <button onClick={() => setShowSearchModal(true)} title="Search trades, plans, recaps (⌘K)" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⌕ Search</button>
-              <button onClick={() => setShowPairsModal(true)} title="Manage Pairs" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⟡ Pairs ({pairs.length})</button>
-              <button onClick={() => setShowTradeTypesModal(true)} title="Manage Trade Types" style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>⊞ Types ({tradeTypes.length})</button>
-              <button onClick={() => setShowAccountModal(true)} style={{ background: T.card, border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, display: "inline-block" }}></span>
-                <span style={{ color: T.text, fontWeight: 500 }}>{activeAccount.name}</span>
-                <span style={{ color: T.textLight }}>▼</span>
-              </button>
-            </>
+
+        {/* Account chip */}
+        {activeAccount && (
+          <div onClick={() => setShowAccountModal(true)} style={{
+            margin: "0 12px 14px", padding: "10px 12px",
+            background: T.cardAlt, border: `1px solid ${T.border}`,
+            borderRadius: 10, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 600, marginBottom: 1 }}>Account</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeAccount.name}</div>
+            </div>
+            <span style={{ color: T.textLight, fontSize: 10 }}>▼</span>
+          </div>
+        )}
+
+        {/* Nav */}
+        <nav style={{ padding: "0 8px", flex: 1, overflowY: "auto" }}>
+          {["Journal", "Tools"].map(grp => {
+            const items = NAV_ITEMS.filter(x => x.grp === grp);
+            return (
+              <div key={grp} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 700, padding: "8px 12px 4px" }}>{grp}</div>
+                {items.map(item => {
+                  const active = activeNavKey === item.k;
+                  return (
+                    <button key={item.k} onClick={() => goto(item.k)} style={{
+                      width: "100%", display: "flex", alignItems: "center", gap: 10,
+                      padding: "9px 12px", marginBottom: 2,
+                      background: active ? T.accentBg : "transparent",
+                      color: active ? T.accent : T.textMid,
+                      border: "none", borderRadius: 8,
+                      fontSize: 13, fontFamily: font, fontWeight: active ? 600 : 500,
+                      textAlign: "left", cursor: "pointer",
+                      transition: "background 120ms",
+                    }}>
+                      <span style={{ fontSize: 14, width: 18, textAlign: "center", opacity: active ? 1 : 0.7 }}>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Bottom actions */}
+        <div style={{ padding: "8px 12px 16px", borderTop: `1px solid ${T.border}` }}>
+          <button onClick={() => setShowPairsModal(true)} style={sidebarLinkStyle(T)}>⟡ Manage Pairs</button>
+          <button onClick={() => setShowTradeTypesModal(true)} style={sidebarLinkStyle(T)}>⊞ Trade Types</button>
+          <button onClick={onLogout} style={{ ...sidebarLinkStyle(T), color: T.red, marginTop: 6 }}>↪ Sign Out</button>
+        </div>
+      </aside>
+
+      {/* ═══════ MAIN AREA ═══════ */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+
+        {/* Slim top bar — page title + search + new trade + KPIs */}
+        <div style={{
+          background: T.card, borderBottom: `1px solid ${T.border}`,
+          padding: "12px 24px",
+          display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+          position: "sticky", top: 0, zIndex: 50,
+        }}>
+          <button className="sidebar-toggle no-print" onClick={() => setSidebarOpen(true)} style={{
+            display: "none", background: "none", border: "none", cursor: "pointer",
+            fontSize: 20, color: T.textMid, padding: 4,
+          }}>☰</button>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: T.text, lineHeight: 1.1 }}>{currentNavItem.label}</div>
+            <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 0.4, marginTop: 2 }}>{currentNavItem.grp}</div>
+          </div>
+
+          {/* KPI chips (only for journal pages) */}
+          {page === "journal" && activeAccount && kpi && (
+            <div className="kpi-chips" style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
+              <div style={kpiChipStyle(T, T.textMid)}>
+                <div style={kpiLabel}>Balance</div>
+                <div style={{ ...kpiValue, color: T.text }}>${kpi.balance.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+              </div>
+              <div style={kpiChipStyle(T, kpi.todayUsd >= 0 ? T.green : T.red)}>
+                <div style={kpiLabel}>Today</div>
+                <div style={{ ...kpiValue, color: kpi.todayUsd >= 0 ? T.green : T.red }}>
+                  {kpi.todayUsd >= 0 ? "+" : "−"}${Math.abs(kpi.todayUsd).toFixed(0)}
+                </div>
+              </div>
+              <div style={kpiChipStyle(T, kpi.monthUsd >= 0 ? T.green : T.red)}>
+                <div style={kpiLabel}>Month</div>
+                <div style={{ ...kpiValue, color: kpi.monthUsd >= 0 ? T.green : T.red }}>
+                  {kpi.monthUsd >= 0 ? "+" : "−"}${Math.abs(kpi.monthUsd).toFixed(0)}
+                </div>
+              </div>
+              <div style={kpiChipStyle(T, T.textMid)}>
+                <div style={kpiLabel}>Win Rate</div>
+                <div style={{ ...kpiValue, color: kpi.wr == null ? T.textLight : (kpi.wr >= 50 ? T.green : T.red) }}>{kpi.wr == null ? "—" : `${kpi.wr.toFixed(0)}%`}</div>
+              </div>
+            </div>
           )}
-          <button onClick={onLogout} style={{ background: "transparent", border: `0.5px solid ${T.border}`, color: T.textMid, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontFamily: font, cursor: "pointer" }}>Sign Out</button>
+
+          {/* Search + New Trade */}
+          {page === "journal" && activeAccount && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button onClick={() => setShowSearchModal(true)} title="Search (⌘K)" style={{
+                background: T.cardAlt, border: `1px solid ${T.border}`, color: T.textMid,
+                padding: "8px 12px", borderRadius: 8, fontSize: 12, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 6,
+              }}>⌕ <span className="hide-mobile">Search</span></button>
+              <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={{ ...btnP, fontSize: 12, padding: "8px 14px" }}>+ New Trade</button>
+            </div>
+          )}
         </div>
-      </div>
+
+        {/* ═══════ CONTENT WRAPPER ═══════ */}
+        <div style={{ flex: 1, padding: "24px", overflow: "auto" }}>
 
       {showAccountModal && <AccountModal accounts={accounts} activeId={activeAccount?.id} onClose={() => activeAccount && setShowAccountModal(false)} onCreate={createAccount} onDelete={deleteAccount} onSelect={selectAccount} />}
       {showPairsModal && <PairsModal pairs={pairs} onClose={() => setShowPairsModal(false)} onAdd={addPair} onUpdate={updatePair} onDelete={deletePair} onResetDefaults={resetPairsToDefaults} />}
@@ -3804,22 +4008,7 @@ function downloadJSON() {
 
       {page === "journal" && activeAccount && (
         <>
-          <div style={{ display: "flex", gap: 8, padding: "12px 20px", alignItems: "center", flexWrap: "wrap", borderBottom: `1px solid ${T.border}`, background: T.card }}>
-            <div className="subtabs-scroll" style={{ display: "flex", gap: 0, flexWrap: "wrap" }}>
-              {tabs.map(t => (
-                <button key={t.k} onClick={() => setTab(t.k)} style={{ background: "none", border: "none", color: tab === t.k ? T.accent : T.textLight, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: font, borderBottom: tab === t.k ? `2px solid ${T.accent}` : "2px solid transparent" }}><span style={{ fontSize: 13, marginRight: 4 }}>{t.i}</span>{t.l}</button>
-              ))}
-            </div>
-            <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={{ ...btnP, fontSize: 11, padding: "6px 14px" }}>+ New Trade</button>
-              {tab === "log" && <button onClick={printTradeLog} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.accent, borderColor: T.accent + "60" }}>⏷ PDF</button>}
-              <button onClick={exportExcel} style={{ ...btnG, fontSize: 10, padding: "5px 10px" }}>Export Excel</button>
-              <button onClick={exportAllBackup} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.accent, borderColor: T.accent + "60" }}>⬇ Excel Backup</button>
-              <button onClick={exportHTMLBackup} disabled={exportingHTML} style={{ ...btnG, fontSize: 10, padding: "5px 10px", color: T.green, borderColor: T.green + "60", opacity: exportingHTML ? 0.6 : 1 }}>{exportingHTML ? "Building..." : "⬇ HTML Backup"}</button>
-            </div>
-          </div>
-
-          <div style={{ padding: "20px", maxWidth: 1280, margin: "0 auto" }}>
+          <div style={{ maxWidth: 1400, margin: "0 auto", width: "100%" }}>
 
             {tab === "dashboard" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -4618,8 +4807,8 @@ function downloadJSON() {
                       <Field label="Bias Link"><input type="url" value={form.bias_link} onChange={e => setForm({ ...form, bias_link: e.target.value })} placeholder="https://..." style={inputS} /></Field>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 12, marginTop: 12 }}>
-                      <Field label="Trade Notes — Setup, Thesis, What Happened"><textarea value={form.notes_trade} onChange={e => setForm({ ...form, notes_trade: e.target.value })} rows={10} placeholder="Why I took the trade (setup, levels, technical + fundamental thesis, entry trigger) AND how the market actually played out (targets hit, reversed at key levels, news moves...)" style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 240 }} /></Field>
-                      <Field label="Mistakes"><textarea value={form.notes_mistakes} onChange={e => setForm({ ...form, notes_mistakes: e.target.value })} rows={10} placeholder="What went wrong, what to improve, deviations from plan..." style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 240 }} /></Field>
+                      <Field label="Trade Notes — Setup, Thesis, What Happened"><textarea value={form.notes_trade} onChange={e => setForm({ ...form, notes_trade: e.target.value })} rows={10} style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 240 }} /></Field>
+                      <Field label="Mistakes"><textarea value={form.notes_mistakes} onChange={e => setForm({ ...form, notes_mistakes: e.target.value })} rows={10} style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 240 }} /></Field>
                     </div>
                     <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                       <button onClick={saveTrade} style={btnP}>{editId ? "Update" : "Save Trade"}</button>
@@ -4631,6 +4820,12 @@ function downloadJSON() {
 
             {tab === "log" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, flexWrap: "wrap" }}>
+                  <button onClick={printTradeLog} style={{ ...btnG, fontSize: 11, padding: "6px 12px", color: T.accent, borderColor: T.accent + "60" }}>⏷ PDF</button>
+                  <button onClick={exportExcel} style={{ ...btnG, fontSize: 11, padding: "6px 12px" }}>Export Excel</button>
+                  <button onClick={exportAllBackup} style={{ ...btnG, fontSize: 11, padding: "6px 12px", color: T.accent, borderColor: T.accent + "60" }}>⬇ Excel Backup</button>
+                  <button onClick={exportHTMLBackup} disabled={exportingHTML} style={{ ...btnG, fontSize: 11, padding: "6px 12px", color: T.green, borderColor: T.green + "60", opacity: exportingHTML ? 0.6 : 1 }}>{exportingHTML ? "Building..." : "⬇ HTML Backup"}</button>
+                </div>
                 <div style={{ ...cardS, padding: 12 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                     <div style={{ display: "flex", gap: 0, marginRight: 4 }}>
@@ -4795,22 +4990,6 @@ function downloadJSON() {
 
             {tab === "recap" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {/* Sub-tab navigation */}
-                <div className="subtabs-scroll" style={{ ...cardS, padding: 4, display: "flex", gap: 4, alignSelf: "flex-start" }}>
-                  {[
-                    { k: "daily", l: "📋 Daily Plan" },
-                    { k: "missed", l: "⊘ Missed" },
-                    { k: "weekly", l: "📅 Weekly Recap" },
-                    { k: "monthly", l: "🗓️ Monthly Recap" },
-                  ].map(s => (
-                    <button key={s.k} onClick={() => setDailySubTab(s.k)} style={{
-                      padding: "8px 16px", fontSize: 12, fontWeight: 600, fontFamily: font,
-                      border: "none", borderRadius: 6, cursor: "pointer",
-                      background: dailySubTab === s.k ? T.accent : "transparent",
-                      color: dailySubTab === s.k ? "#fff" : T.textMid,
-                    }}>{s.l}</button>
-                  ))}
-                </div>
                 {dailySubTab === "daily" && <DailyPlanPage
                   user={user}
                   activeAccount={activeAccount}
@@ -4831,9 +5010,11 @@ function downloadJSON() {
         </>
       )}
 
-      <div style={{ padding: "16px 20px", textAlign: "center", fontSize: 10, color: T.textLight, fontFamily: mono, borderTop: `1px solid ${T.border}`, marginTop: 20 }}>
-        VARMARI · Macro Intelligence & Trading Infrastructure
-      </div>
+          <div style={{ padding: "16px 20px", textAlign: "center", fontSize: 10, color: T.textLight, fontFamily: mono, marginTop: 20 }}>
+            VARMARI · Macro Intelligence & Trading Infrastructure
+          </div>
+        </div> {/* /content wrapper */}
+      </div> {/* /main area */}
     </div>
   );
 }
