@@ -120,6 +120,17 @@ const GLOBAL_CSS = `
   body { -webkit-text-size-adjust: 100%; margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; color: #0F0F1A; }
   input, select, textarea { font-size: 16px !important; }
   @media (min-width: 720px) { input, select, textarea { font-size: 14px !important; } }
+  /* Compact variant for filter rows AND descendants (like trade form) */
+  @media (min-width: 720px) {
+    .compact-input, .compact-input select, select.compact-input,
+    input.compact-input, textarea.compact-input,
+    .compact-form input, .compact-form select, .compact-form textarea { font-size: 12px !important; padding: 8px 12px !important; }
+    .compact-form label { font-size: 9px !important; }
+  }
+  @media (max-width: 719px) {
+    .compact-input, input.compact-input, select.compact-input,
+    .compact-form input, .compact-form select, .compact-form textarea { font-size: 14px !important; }
+  }
   button { touch-action: manipulation; font-family: 'Plus Jakarta Sans', sans-serif; }
   * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 
@@ -2842,6 +2853,8 @@ function Journal({ user, onLogout }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyTrade());
   const [editId, setEditId] = useState(null);
+  // Multi-account mirror: { [account_id]: risk_pct as string }. Only used on new trades.
+  const [mirrorTargets, setMirrorTargets] = useState({});
   const [fPair, setFPair] = useState("All");
   const [fResult, setFResult] = useState("All");
   const [fDay, setFDay] = useState("All");
@@ -3008,7 +3021,58 @@ function Journal({ user, onLogout }) {
       if (error) { alert("Save failed: " + (error.message || JSON.stringify(error)) + "\n\nIf this mentions a column, you need to run the new SQL migration in Supabase first."); return; }
       setTrades(p => [data, ...p]);
     }
+
+    // ─── Multi-account mirror ──────────────────────────────────────────────
+    // Only on new trades (not edits), only if any target selected.
+    const mirrorIds = Object.keys(mirrorTargets).filter(id => id !== activeAccount.id && mirrorTargets[id] !== undefined);
+    if (!editId && mirrorIds.length > 0) {
+      const results = { ok: [], fail: [] };
+      for (const accId of mirrorIds) {
+        const targetAcc = accounts.find(a => a.id === accId);
+        if (!targetAcc) continue;
+        const mirrorRisk = parseFloat(mirrorTargets[accId]);
+        if (isNaN(mirrorRisk) || mirrorRisk <= 0) { results.fail.push(targetAcc.name + " (invalid risk)"); continue; }
+
+        // Recompute PnL for the target account using its own risk% and starting balance
+        // pnl_pct depends on result + rr + risk. Recalc same as saveTrade does.
+        const rrVal = parseFloat(form.rr) || 0;
+        const maxRVal = parseFloat(form.max_r) || 0;
+        let mirrorPnl = 0;
+        if (form.result === "Win") mirrorPnl = mirrorRisk * (maxRVal || rrVal);
+        else if (form.result === "Loss") mirrorPnl = -mirrorRisk;
+        // Breakeven = 0
+
+        const mirrorPayload = {
+          account_id: targetAcc.id, user_id: user.id,
+          date: form.date, day: getDay(form.date), session: form.session, pair: form.pair,
+          exit_date: form.exit_date || null,
+          risk: mirrorRisk, direction: form.direction,
+          entry: form.entry, exit: form.exit, rr: form.rr, max_r: form.max_r,
+          max_adverse_r: form.max_adverse_r || "",
+          pnl_pct: mirrorPnl, pnl_usd: (mirrorPnl / 100) * targetAcc.starting_balance,
+          result: form.result,
+          exec_link: form.exec_link, bias_link: form.bias_link,
+          notes_trade: form.notes_trade || "", notes_market: form.notes_market || "", notes_mistakes: form.notes_mistakes || "",
+          trade_types: form.trade_types || "",
+        };
+        let { data: mData, error: mErr } = await supabase.from("trades").insert(mirrorPayload).select().single();
+        if (mErr && /column .* does not exist/i.test(mErr.message || "")) {
+          const fb = { ...mirrorPayload };
+          delete fb.notes_trade; delete fb.notes_market; delete fb.max_adverse_r; delete fb.exit_date;
+          fb.notes_technical = form.notes_trade || ""; fb.notes_fundamental = "";
+          const r2 = await supabase.from("trades").insert(fb).select().single();
+          mData = r2.data; mErr = r2.error;
+        }
+        if (mErr) results.fail.push(`${targetAcc.name} (${mErr.message || "error"})`);
+        else results.ok.push(targetAcc.name);
+      }
+      if (results.fail.length > 0) {
+        alert(`Mirrored to ${results.ok.length} account(s). Failed: ${results.fail.join(", ")}`);
+      }
+    }
+
     setForm(emptyTrade()); setShowForm(false); setEditId(null);
+    setMirrorTargets({});
   };
   const editTrade = t => {
     setForm({
@@ -5057,10 +5121,10 @@ function downloadJSON() {
             {/* TRADE FORM — modal popup, rendered above all tabs */}
             {showForm && (
               <div className="modal-mobile" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", ...center, zIndex: 1000, padding: 16, overflowY: "auto", alignItems: "flex-start" }}>
-                <div className="modal-mobile-inner" style={{ ...cardS, padding: 22, marginTop: 24, marginBottom: 24, maxWidth: 1100, width: "100%", maxHeight: "calc(100vh - 48px)", overflowY: "auto" }}>
+                <div className="modal-mobile-inner compact-form" style={{ ...cardS, padding: 22, marginTop: 24, marginBottom: 24, maxWidth: 1100, width: "100%", maxHeight: "calc(100vh - 48px)", overflowY: "auto" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
                   <span style={{ fontSize: 15, fontWeight: 700 }}>{editId ? "Edit Trade" : "Log New Trade"}</span>
-                  <button onClick={() => { setShowForm(false); setEditId(null); }} style={btnG}>✕</button>
+                  <button onClick={() => { setShowForm(false); setEditId(null); setMirrorTargets({}); }} style={btnG}>✕</button>
                 </div>
 
                 {/* RISK GAUGES — compact running totals shown before logging a trade */}
@@ -5149,9 +5213,90 @@ function downloadJSON() {
                       <Field label="Trade Notes — Setup, Thesis, What Happened"><textarea value={form.notes_trade} onChange={e => setForm({ ...form, notes_trade: e.target.value })} rows={10} style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 240 }} /></Field>
                       <Field label="Mistakes"><textarea value={form.notes_mistakes} onChange={e => setForm({ ...form, notes_mistakes: e.target.value })} rows={10} style={{ ...inputS, resize: "vertical", fontFamily: font, minHeight: 240 }} /></Field>
                     </div>
+
+                    {/* ═══ Multi-account mirror — only on new trades, only if >1 account ═══ */}
+                    {!editId && accounts.length > 1 && (
+                      <div style={{
+                        marginTop: 20, padding: 16,
+                        background: T.accentBg, borderRadius: 12,
+                        borderLeft: `3px solid ${T.accent}`,
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.accent, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 800, marginBottom: 4 }}>⇉ Mirror This Trade</div>
+                            <div style={{ fontSize: 12, color: T.textMid, fontWeight: 500 }}>Also save a copy to other accounts with their own risk %</div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button type="button" onClick={() => {
+                              const all = {};
+                              accounts.forEach(a => { if (a.id !== activeAccount.id) all[a.id] = form.risk || 1; });
+                              setMirrorTargets(all);
+                            }} style={{ ...btnG, fontSize: 11, padding: "6px 10px" }}>Select all</button>
+                            <button type="button" onClick={() => setMirrorTargets({})} style={{ ...btnG, fontSize: 11, padding: "6px 10px" }}>Clear</button>
+                          </div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8 }}>
+                          {accounts.filter(a => a.id !== activeAccount.id).map(a => {
+                            const enabled = mirrorTargets[a.id] !== undefined;
+                            return (
+                              <div key={a.id} style={{
+                                display: "flex", alignItems: "center", gap: 10,
+                                padding: "10px 12px", background: enabled ? T.card : "transparent",
+                                borderRadius: 10, boxShadow: enabled ? T.shadowXs : "none",
+                                border: enabled ? "none" : `1px dashed ${T.borderSubtle}`,
+                                transition: "all 120ms",
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  onChange={e => {
+                                    if (e.target.checked) {
+                                      setMirrorTargets({ ...mirrorTargets, [a.id]: form.risk || 1 });
+                                    } else {
+                                      const copy = { ...mirrorTargets }; delete copy[a.id];
+                                      setMirrorTargets(copy);
+                                    }
+                                  }}
+                                  style={{ width: 16, height: 16, accentColor: T.accent, cursor: "pointer" }}
+                                />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                                  <div style={{ fontSize: 10, color: T.textLight, fontWeight: 500 }}>Balance ${(a.starting_balance || 0).toLocaleString()}</div>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    disabled={!enabled}
+                                    value={mirrorTargets[a.id] || ""}
+                                    onChange={e => setMirrorTargets({ ...mirrorTargets, [a.id]: e.target.value })}
+                                    placeholder="Risk"
+                                    style={{
+                                      width: 62, fontSize: 12, padding: "6px 8px",
+                                      background: enabled ? T.cardSoft : "transparent",
+                                      border: "none", borderRadius: 6, textAlign: "right", fontWeight: 700,
+                                      color: enabled ? T.text : T.textLight,
+                                      outline: "none",
+                                    }}
+                                  />
+                                  <span style={{ fontSize: 11, color: T.textLight, fontWeight: 700 }}>%</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {Object.keys(mirrorTargets).length > 0 && (
+                          <div style={{ marginTop: 10, fontSize: 11, color: T.accent, fontWeight: 600 }}>
+                            → Will save to {Object.keys(mirrorTargets).length + 1} accounts total (this one + {Object.keys(mirrorTargets).length} mirror{Object.keys(mirrorTargets).length === 1 ? "" : "s"})
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                      <button onClick={saveTrade} style={btnP}>{editId ? "Update" : "Save Trade"}</button>
-                      <button onClick={() => { setShowForm(false); setEditId(null); }} style={btnG}>Cancel</button>
+                      <button onClick={saveTrade} style={btnP}>{editId ? "Update" : (Object.keys(mirrorTargets).length > 0 ? `Save & Mirror to ${Object.keys(mirrorTargets).length}` : "Save Trade")}</button>
+                      <button onClick={() => { setShowForm(false); setEditId(null); setMirrorTargets({}); }} style={btnG}>Cancel</button>
                     </div>
               </div>
               </div>
@@ -5183,13 +5328,13 @@ function downloadJSON() {
                         }}>{g.l}</button>
                       ))}
                     </div>
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ ...inputS, width: 160, fontSize: 11, padding: "7px 10px" }} />
-                    <select value={fPair} onChange={e => setFPair(e.target.value)} style={{ ...selectS, width: 120, fontSize: 11, padding: "7px 10px" }}><option value="All">All Pairs</option>{pairNames.map(p => <option key={p} value={p}>{p}</option>)}</select>
-                    <select value={fResult} onChange={e => setFResult(e.target.value)} style={{ ...selectS, width: 110, fontSize: 11, padding: "7px 10px" }}><option value="All">All Results</option><option>Win</option><option>Loss</option><option>Breakeven</option></select>
-                    <select value={fDir} onChange={e => setFDir(e.target.value)} style={{ ...selectS, width: 110, fontSize: 11, padding: "7px 10px" }}><option value="All">All Direction</option><option>Long</option><option>Short</option></select>
-                    <select value={fSess} onChange={e => setFSess(e.target.value)} style={{ ...selectS, width: 120, fontSize: 11, padding: "7px 10px" }}><option value="All">All Sessions</option>{SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
-                    <select value={fDay} onChange={e => setFDay(e.target.value)} style={{ ...selectS, width: 110, fontSize: 11, padding: "7px 10px" }}><option value="All">All Days</option>{DAYS_W.map(d => <option key={d} value={d}>{d}</option>)}</select>
-                    {allTags.length > 0 && <select value={fTag} onChange={e => setFTag(e.target.value)} style={{ ...selectS, width: 130, fontSize: 11, padding: "7px 10px" }}><option value="All">All Tags</option>{allTags.map(t => <option key={t} value={t}>#{t}</option>)}</select>}
+                    <input className="compact-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ ...inputS, width: 160 }} />
+                    <select className="compact-input" value={fPair} onChange={e => setFPair(e.target.value)} style={{ ...selectS, width: 120 }}><option value="All">All Pairs</option>{pairNames.map(p => <option key={p} value={p}>{p}</option>)}</select>
+                    <select className="compact-input" value={fResult} onChange={e => setFResult(e.target.value)} style={{ ...selectS, width: 110 }}><option value="All">All Results</option><option>Win</option><option>Loss</option><option>Breakeven</option></select>
+                    <select className="compact-input" value={fDir} onChange={e => setFDir(e.target.value)} style={{ ...selectS, width: 110 }}><option value="All">All Direction</option><option>Long</option><option>Short</option></select>
+                    <select className="compact-input" value={fSess} onChange={e => setFSess(e.target.value)} style={{ ...selectS, width: 120 }}><option value="All">All Sessions</option>{SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                    <select className="compact-input" value={fDay} onChange={e => setFDay(e.target.value)} style={{ ...selectS, width: 110 }}><option value="All">All Days</option>{DAYS_W.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                    {allTags.length > 0 && <select className="compact-input" value={fTag} onChange={e => setFTag(e.target.value)} style={{ ...selectS, width: 130 }}><option value="All">All Tags</option>{allTags.map(t => <option key={t} value={t}>#{t}</option>)}</select>}
                     {hasActiveFilters && <button onClick={clearFilters} style={{ ...btnG, fontSize: 10, padding: "6px 12px", color: T.red, borderColor: T.red + "40" }}>✕ Clear</button>}
                     <div style={{ marginLeft: "auto", fontSize: 10, color: T.textLight, fontFamily: mono, display: "flex", alignItems: "center", gap: 8 }}>
                       <span>{filtered.length} of {trades.length} trades</span>
