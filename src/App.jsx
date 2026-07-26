@@ -21,16 +21,79 @@ const SESSIONS = ["London","New York","Tokyo"];
 const DAYS_W = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
 const BIAS_TYPES = ["Transition","Re-Transition","Confirmation","Continuation","None"];
 
+// ═══════════════════════════════════════════════════════════════════
+// DESIGN SYSTEM — Neumorphic lavender base + purple primary + soft gradients
+// Based on user-selected refs: soft raised cards on lavender bg, no borders,
+// gradient stat tiles, big display typography
+// ═══════════════════════════════════════════════════════════════════
 const T = {
-  bg: "#FBFAF6", card: "#FFFFFF", cardAlt: "#FAF8F4", border: "#E8E2D5",
-  borderLight: "#F0EAD9", text: "#2C2418", textMid: "#6B5D4F", textLight: "#9C8E7E",
-  accent: "#C97140", accentBg: "#FDF0E5", green: "#1F7A48", greenBg: "#E8F5EE",
-  red: "#B73A2C", redBg: "#FDF0EF", blue: "#2563EB", blueBg: "#DBEAFE",
-  purple: "#7C3AED", purpleBg: "#F3E8FF", amber: "#B45309", amberBg: "#FEF9E8",
-  headerBg: "#FFFFFF",
+  // Surfaces
+  bg: "#EEEDF6",           // Lavender-tinted app background (neumorphism base)
+  bgDeep: "#E4E1F0",       // Slightly deeper for insets/pressed states
+  card: "#FFFFFF",         // Cards float above bg
+  cardAlt: "#F7F5FE",      // Subtle alt surface (never pure white)
+  cardSoft: "#F0EEF9",     // Even softer inner surface
+  border: "transparent",   // Neumorphism = no borders. Shadows do the work.
+  borderLight: "transparent",
+  borderSubtle: "#E4E1F0", // Only used where truly needed (table dividers)
+
+  // Text
+  text: "#1F1B3A",         // Deep indigo-black — reads warm on lavender bg
+  textMid: "#5B5478",      // Muted purple-gray
+  textLight: "#9A93B5",    // Faint labels
+
+  // Accent (primary — purple)
+  accent: "#7B6BEF",       // Bright modern purple (from ref images)
+  accentDeep: "#5B4BCE",   // Darker for hover/press
+  accentBg: "#EDE9FE",     // Soft purple wash
+  accentGlow: "rgba(123, 107, 239, 0.35)",  // For shadows
+
+  // Secondary accent (terracotta kept as brand memory — used sparingly)
+  brand: "#E88968",        // Peach-terracotta
+  brandBg: "#FEEEE5",
+
+  // Semantic
+  green: "#22C55E",        // Fresh mint green
+  greenBg: "#DCFCE7",
+  greenGlow: "rgba(34, 197, 94, 0.28)",
+  red: "#EF4444",          // Coral red
+  redBg: "#FEE2E2",
+  redGlow: "rgba(239, 68, 68, 0.28)",
+  blue: "#3B82F6",
+  blueBg: "#DBEAFE",
+  purple: "#8B5CF6",       // Alt purple for variation
+  purpleBg: "#EDE9FE",
+  amber: "#F59E0B",
+  amberBg: "#FEF3C7",
+
+  headerBg: "#EEEDF6",     // Match bg for seamless top bar
+
+  // Gradients — the money maker for stat tiles
+  gradPurple: "linear-gradient(135deg, #7B6BEF 0%, #A78BFA 100%)",
+  gradPeach: "linear-gradient(135deg, #FDBA74 0%, #E88968 100%)",
+  gradGreen: "linear-gradient(135deg, #4ADE80 0%, #22C55E 100%)",
+  gradRed: "linear-gradient(135deg, #F87171 0%, #EF4444 100%)",
+  gradBlue: "linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)",
+  gradLavender: "linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)",
+  gradSoft: "linear-gradient(180deg, #FFFFFF 0%, #F7F5FE 100%)",
+
+  // Neumorphic shadows — the signature look
+  // Cards: subtle raised shadow (light top-left, dark bottom-right)
+  shadowRaised: "8px 8px 20px rgba(174, 174, 214, 0.35), -8px -8px 20px rgba(255, 255, 255, 0.85)",
+  shadowRaisedSm: "4px 4px 10px rgba(174, 174, 214, 0.28), -4px -4px 10px rgba(255, 255, 255, 0.9)",
+  shadowRaisedLg: "12px 12px 32px rgba(174, 174, 214, 0.4), -12px -12px 32px rgba(255, 255, 255, 0.9)",
+  // Inset: pressed/inputs
+  shadowInset: "inset 4px 4px 8px rgba(174, 174, 214, 0.25), inset -4px -4px 8px rgba(255, 255, 255, 0.9)",
+  shadowInsetSm: "inset 2px 2px 4px rgba(174, 174, 214, 0.2), inset -2px -2px 4px rgba(255, 255, 255, 0.9)",
+  // Glow shadow for gradient tiles
+  shadowPurpleGlow: "0 10px 30px rgba(123, 107, 239, 0.25), 0 4px 8px rgba(123, 107, 239, 0.15)",
+  shadowPeachGlow: "0 10px 30px rgba(232, 137, 104, 0.25), 0 4px 8px rgba(232, 137, 104, 0.15)",
+  shadowGreenGlow: "0 10px 30px rgba(34, 197, 94, 0.25), 0 4px 8px rgba(34, 197, 94, 0.15)",
+  shadowRedGlow: "0 10px 30px rgba(239, 68, 68, 0.25), 0 4px 8px rgba(239, 68, 68, 0.15)",
 };
-const font = `'Inter', -apple-system, 'SF Pro Display', system-ui, sans-serif`;
-const mono = `'Inter', -apple-system, system-ui, sans-serif`;
+const font = `'Plus Jakarta Sans', 'Inter', -apple-system, 'SF Pro Display', system-ui, sans-serif`;
+const fontDisplay = `'Plus Jakarta Sans', 'Inter', system-ui, sans-serif`;  // Same but hint for display use
+const mono = `'JetBrains Mono', 'Fira Code', 'Menlo', ui-monospace, monospace`;
 
 // Mobile detection — reactive. Breakpoint 720px (below = mobile).
 const useIsMobile = () => {
@@ -47,34 +110,46 @@ const useIsMobile = () => {
 // Global responsive CSS — injected once. Handles print + mobile fixes that
 // can't be done via inline styles (media queries, ::-webkit-scrollbar, etc.)
 const GLOBAL_CSS = `
-  html, body, #root { overflow-x: hidden; background: #FBFAF6; }
-  body { -webkit-text-size-adjust: 100%; margin: 0; }
-  input, select, textarea { font-size: 16px !important; } /* prevent iOS zoom on focus */
-  @media (min-width: 720px) { input, select, textarea { font-size: 13px !important; } }
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+  html, body, #root { overflow-x: hidden; background: #EEEDF6; }
+  body { -webkit-text-size-adjust: 100%; margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+  input, select, textarea { font-size: 16px !important; }
+  @media (min-width: 720px) { input, select, textarea { font-size: 14px !important; } }
   button { touch-action: manipulation; }
-  * { -webkit-tap-highlight-color: transparent; }
+  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 
-  /* Scrollable containers with visible scrollbars */
+  /* Sleek scrollbars matching lavender theme */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #C7BFDE; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #A78BFA; }
+
   .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .scroll-x::-webkit-scrollbar { height: 4px; }
-  .scroll-x::-webkit-scrollbar-thumb { background: #C9714080; border-radius: 2px; }
+  .scroll-x::-webkit-scrollbar { height: 6px; }
+  .scroll-x::-webkit-scrollbar-thumb { background: #A78BFA; border-radius: 3px; }
 
-  /* Sidebar backdrop only shows on mobile */
   .sidebar-backdrop { display: none; }
 
-  /* Desktop: sidebar always visible, backdrop hidden */
+  /* Focus ring — soft purple glow */
+  input:focus, select:focus, textarea:focus {
+    box-shadow: inset 2px 2px 4px rgba(174, 174, 214, 0.2), inset -2px -2px 4px rgba(255, 255, 255, 0.9), 0 0 0 3px rgba(123, 107, 239, 0.15) !important;
+  }
+
+  /* Button hover — subtle lift */
+  button:not(:disabled):hover { filter: brightness(1.05); }
+  button:not(:disabled):active { transform: translateY(1px); }
+
   @media (min-width: 900px) {
     .sidebar-toggle { display: none !important; }
   }
 
-  /* Trade Log table — allow horizontal scroll below 720 */
   @media (max-width: 719px) {
     .tl-table { min-width: 720px; font-size: 11px !important; }
-    .tl-table td, .tl-table th { padding: 6px 4px !important; }
+    .tl-table td, .tl-table th { padding: 8px 6px !important; }
     .tl-hide-mobile { display: none !important; }
     .stack-mobile { flex-direction: column !important; align-items: stretch !important; }
     .stack-mobile > * { width: 100%; }
-    .grid-tight-mobile { grid-template-columns: repeat(2, 1fr) !important; gap: 6px !important; }
+    .grid-tight-mobile { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
     .subtabs-scroll { overflow-x: auto; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; }
     .subtabs-scroll button { white-space: nowrap; }
     .modal-mobile { padding: 0 !important; }
@@ -84,28 +159,34 @@ const GLOBAL_CSS = `
     .kpi-chips { order: 3; width: 100%; margin-left: 0 !important; }
   }
 
-  /* Mobile: sidebar becomes slide-out drawer */
   @media (max-width: 899px) {
     .sidebar-toggle { display: inline-flex !important; }
     .sidebar {
       position: fixed !important;
       top: 0; left: 0; height: 100vh !important;
       transform: translateX(-100%);
-      transition: transform 200ms ease;
-      box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+      transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 8px 0 32px rgba(31, 27, 58, 0.2) !important;
     }
     .sidebar.sidebar-open { transform: translateX(0); }
     .sidebar-backdrop {
       display: block !important;
       position: fixed; inset: 0;
-      background: rgba(0,0,0,0.5); z-index: 99;
+      background: rgba(31, 27, 58, 0.5); z-index: 99;
+      backdrop-filter: blur(4px);
     }
   }
 
-  /* Print rules */
   @media print {
     .no-print, .sidebar, .sidebar-toggle { display: none !important; }
     body { background: #fff !important; }
+  }
+
+  /* Subtle shimmer on gradient tiles */
+  .kpi-tile::after {
+    content: ''; position: absolute; top: 0; right: 0; width: 60%; height: 100%;
+    background: linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+    pointer-events: none;
   }
 `;
 
@@ -353,34 +434,70 @@ const daysInTrade = (t) => {
 // (pattern_text + change_text stay empty; old data still loads if present)
 const emptyRecap = () => ({ positives: "", negatives: "" });
 
-const cardS = { background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, overflow: "hidden" };
+// ═══ Neumorphic shared styles ═══
+const cardS = {
+  background: T.card, borderRadius: 20, border: "none",
+  boxShadow: T.shadowRaised, overflow: "hidden",
+};
+const cardFlat = {
+  background: T.card, borderRadius: 16, border: "none",
+  boxShadow: T.shadowRaisedSm,
+};
+const cardInset = {
+  background: T.bg, borderRadius: 16, border: "none",
+  boxShadow: T.shadowInset,
+};
 const inputS = {
-  width: "100%", padding: "8px 10px", fontSize: 13, fontFamily: mono, color: T.text,
-  background: T.cardAlt, border: `1px solid ${T.border}`, borderRadius: 8, outline: "none", boxSizing: "border-box",
+  width: "100%", padding: "12px 16px", fontSize: 14, fontFamily: font, color: T.text, fontWeight: 500,
+  background: T.bg, border: "none", borderRadius: 12,
+  boxShadow: T.shadowInsetSm, outline: "none", boxSizing: "border-box",
 };
 const selectS = {
   ...inputS, cursor: "pointer", appearance: "none",
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239C8E7E'/%3E%3C/svg%3E")`,
-  backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center", paddingRight: 26,
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239A93B5'/%3E%3C/svg%3E")`,
+  backgroundRepeat: "no-repeat", backgroundPosition: "right 14px center", paddingRight: 32,
 };
-const btnP = { padding: "9px 20px", fontSize: 12, fontWeight: 600, fontFamily: font, color: "#fff", background: T.accent, border: "none", borderRadius: 8, cursor: "pointer" };
-const btnG = { padding: "8px 14px", fontSize: 12, fontWeight: 500, fontFamily: font, color: T.textMid, background: "transparent", border: `1px solid ${T.border}`, borderRadius: 8, cursor: "pointer" };
+const btnP = {
+  padding: "12px 24px", fontSize: 13, fontWeight: 700, fontFamily: font, color: "#fff",
+  background: T.gradPurple, border: "none", borderRadius: 12,
+  boxShadow: T.shadowPurpleGlow, cursor: "pointer",
+  letterSpacing: 0.2, transition: "transform 120ms, box-shadow 120ms",
+};
+const btnG = {
+  padding: "10px 18px", fontSize: 12, fontWeight: 600, fontFamily: font, color: T.textMid,
+  background: T.card, border: "none", borderRadius: 12,
+  boxShadow: T.shadowRaisedSm, cursor: "pointer",
+};
 const center = { display: "flex", alignItems: "center", justifyContent: "center" };
 
 const sidebarLinkStyle = (T) => ({
-  display: "block", width: "100%", padding: "7px 12px",
+  display: "block", width: "100%", padding: "10px 14px",
   background: "transparent", border: "none",
-  color: T.textMid, fontSize: 12, fontFamily: font, textAlign: "left",
-  cursor: "pointer", borderRadius: 6, marginBottom: 1,
+  color: T.textMid, fontSize: 12, fontFamily: font, fontWeight: 500, textAlign: "left",
+  cursor: "pointer", borderRadius: 10, marginBottom: 2,
 });
+
+// Gradient stat tile — the signature dashboard component
+const kpiTileStyle = (gradient, glow) => ({
+  padding: "18px 20px", background: gradient, color: "#fff",
+  borderRadius: 18, border: "none",
+  boxShadow: glow, minWidth: 140,
+  position: "relative", overflow: "hidden",
+});
+const kpiTileFlatStyle = {
+  padding: "18px 20px", background: T.card, borderRadius: 18,
+  boxShadow: T.shadowRaisedSm, minWidth: 140,
+};
+const kpiLabel = { fontSize: 10, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 700, marginBottom: 6, opacity: 0.85 };
+const kpiValue = { fontSize: 22, fontWeight: 800, fontFamily: font, lineHeight: 1, letterSpacing: -0.5 };
+
+// Small chip style for header (compact version)
 const kpiChipStyle = (T, borderColor) => ({
-  padding: "6px 12px", background: T.cardAlt,
-  border: `1px solid ${T.border}`,
-  borderLeft: `3px solid ${borderColor}`,
-  borderRadius: 8, minWidth: 74,
+  padding: "10px 14px", background: T.card,
+  borderRadius: 12, minWidth: 80,
+  boxShadow: T.shadowRaisedSm,
+  borderTop: `2px solid ${borderColor}`,
 });
-const kpiLabel = { fontSize: 9, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 };
-const kpiValue = { fontSize: 14, fontWeight: 700, fontFamily: mono, lineHeight: 1 };
 
 function Pill({ text, type }) {
   const m = { Win: [T.greenBg, T.green], Loss: [T.redBg, T.red], Breakeven: [T.cardAlt, T.textMid], Long: [T.greenBg, T.green], Short: [T.redBg, T.red], pair: [T.accentBg, T.accent], session: [T.blueBg, T.blue], bias: [T.purpleBg, T.purple] };
@@ -3755,57 +3872,75 @@ function downloadJSON() {
       {/* ═══════ SIDEBAR ═══════ */}
       {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="sidebar-backdrop" />}
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`} style={{
-        width: 240, background: T.card, borderRight: `1px solid ${T.border}`,
+        width: 260, background: T.bg,
         display: "flex", flexDirection: "column", flexShrink: 0,
         position: "sticky", top: 0, height: "100vh", zIndex: 100,
+        padding: "20px 14px",
       }}>
-        {/* Logo */}
-        <div style={{ padding: "22px 20px 18px", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${T.accent}, #B05F2E)`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 15, letterSpacing: -0.5, boxShadow: `0 2px 6px ${T.accent}40` }}>V</div>
+        {/* Logo — neumorphic raised gradient tile */}
+        <div style={{ padding: "6px 8px 22px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 14,
+            background: T.gradPurple,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontWeight: 800, fontSize: 20, letterSpacing: -1,
+            boxShadow: T.shadowPurpleGlow,
+          }}>V</div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, letterSpacing: 0.5, lineHeight: 1 }}>VARMARI</div>
-            <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.5, fontWeight: 600, textTransform: "uppercase", marginTop: 3 }}>Trading Journal</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text, letterSpacing: -0.3, lineHeight: 1 }}>Varmari</div>
+            <div style={{ fontSize: 10, color: T.textLight, letterSpacing: 1.5, fontWeight: 600, textTransform: "uppercase", marginTop: 4 }}>Trading Journal</div>
           </div>
         </div>
 
-        {/* Account chip */}
+        {/* Account chip — inset neumorphic */}
         {activeAccount && (
           <div onClick={() => setShowAccountModal(true)} style={{
-            margin: "0 12px 14px", padding: "10px 12px",
-            background: T.cardAlt, border: `1px solid ${T.border}`,
-            borderRadius: 10, cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 8,
+            margin: "0 4px 20px", padding: "12px 14px",
+            background: T.bg, borderRadius: 14, cursor: "pointer",
+            boxShadow: T.shadowInsetSm,
+            display: "flex", alignItems: "center", gap: 10,
           }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, flexShrink: 0 }} />
+            <div style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: T.green, flexShrink: 0,
+              boxShadow: `0 0 8px ${T.greenGlow}`,
+            }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 0.8, textTransform: "uppercase", fontWeight: 600, marginBottom: 1 }}>Account</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeAccount.name}</div>
+              <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>Active Account</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeAccount.name}</div>
             </div>
             <span style={{ color: T.textLight, fontSize: 10 }}>▼</span>
           </div>
         )}
 
-        {/* Nav */}
-        <nav style={{ padding: "0 8px", flex: 1, overflowY: "auto" }}>
+        {/* Nav — floating raised buttons for active */}
+        <nav style={{ padding: "0 4px", flex: 1, overflowY: "auto" }}>
           {["Journal", "Tools"].map(grp => {
             const items = NAV_ITEMS.filter(x => x.grp === grp);
             return (
-              <div key={grp} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 700, padding: "8px 12px 4px" }}>{grp}</div>
+              <div key={grp} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 9, color: T.textLight, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 700, padding: "0 12px 8px" }}>{grp}</div>
                 {items.map(item => {
                   const active = activeNavKey === item.k;
                   return (
                     <button key={item.k} onClick={() => goto(item.k)} style={{
-                      width: "100%", display: "flex", alignItems: "center", gap: 10,
-                      padding: "9px 12px", marginBottom: 2,
-                      background: active ? T.accentBg : "transparent",
+                      width: "100%", display: "flex", alignItems: "center", gap: 12,
+                      padding: "12px 14px", marginBottom: 4,
+                      background: active ? T.card : "transparent",
                       color: active ? T.accent : T.textMid,
-                      border: "none", borderRadius: 8,
-                      fontSize: 13, fontFamily: font, fontWeight: active ? 600 : 500,
+                      border: "none", borderRadius: 12,
+                      fontSize: 13, fontFamily: font, fontWeight: active ? 700 : 500,
                       textAlign: "left", cursor: "pointer",
-                      transition: "background 120ms",
+                      boxShadow: active ? T.shadowRaisedSm : "none",
+                      transition: "background 160ms, color 160ms",
                     }}>
-                      <span style={{ fontSize: 14, width: 18, textAlign: "center", opacity: active ? 1 : 0.7 }}>{item.icon}</span>
+                      <span style={{
+                        fontSize: 15, width: 24, height: 24,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        borderRadius: 8,
+                        background: active ? T.gradPurple : "transparent",
+                        color: active ? "#fff" : T.textMid,
+                      }}>{item.icon}</span>
                       <span>{item.label}</span>
                     </button>
                   );
@@ -3815,11 +3950,15 @@ function downloadJSON() {
           })}
         </nav>
 
-        {/* Bottom actions */}
-        <div style={{ padding: "8px 12px 16px", borderTop: `1px solid ${T.border}` }}>
+        {/* Bottom actions — inset background */}
+        <div style={{
+          padding: "12px 8px", marginTop: 8,
+          background: T.bg, borderRadius: 14,
+          boxShadow: T.shadowInsetSm,
+        }}>
           <button onClick={() => setShowPairsModal(true)} style={sidebarLinkStyle(T)}>⟡ Manage Pairs</button>
           <button onClick={() => setShowTradeTypesModal(true)} style={sidebarLinkStyle(T)}>⊞ Trade Types</button>
-          <button onClick={onLogout} style={{ ...sidebarLinkStyle(T), color: T.red, marginTop: 6 }}>↪ Sign Out</button>
+          <button onClick={onLogout} style={{ ...sidebarLinkStyle(T), color: T.red, fontWeight: 600 }}>↪ Sign Out</button>
         </div>
       </aside>
 
@@ -3828,55 +3967,57 @@ function downloadJSON() {
 
         {/* Slim top bar — page title + search + new trade + KPIs */}
         <div style={{
-          background: T.card, borderBottom: `1px solid ${T.border}`,
-          padding: "12px 24px",
-          display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+          background: T.bg,
+          padding: "18px 28px",
+          display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap",
           position: "sticky", top: 0, zIndex: 50,
         }}>
           <button className="sidebar-toggle no-print" onClick={() => setSidebarOpen(true)} style={{
-            display: "none", background: "none", border: "none", cursor: "pointer",
-            fontSize: 20, color: T.textMid, padding: 4,
+            display: "none", background: T.card, border: "none", cursor: "pointer",
+            fontSize: 18, color: T.textMid, padding: "10px 12px",
+            borderRadius: 10, boxShadow: T.shadowRaisedSm,
           }}>☰</button>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: T.text, lineHeight: 1.1 }}>{currentNavItem.label}</div>
-            <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 0.4, marginTop: 2 }}>{currentNavItem.grp}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.text, lineHeight: 1.05, letterSpacing: -0.6 }}>{currentNavItem.label}</div>
+            <div style={{ fontSize: 11, color: T.textLight, letterSpacing: 1.2, marginTop: 4, textTransform: "uppercase", fontWeight: 700 }}>{currentNavItem.grp}</div>
           </div>
 
-          {/* KPI chips (only for journal pages) */}
+          {/* KPI chips */}
           {page === "journal" && activeAccount && kpi && (
-            <div className="kpi-chips" style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
-              <div style={kpiChipStyle(T, T.textMid)}>
-                <div style={kpiLabel}>Balance</div>
-                <div style={{ ...kpiValue, color: T.text }}>${kpi.balance.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
+            <div className="kpi-chips" style={{ display: "flex", gap: 12, marginLeft: "auto", flexWrap: "wrap" }}>
+              <div style={kpiChipStyle(T, T.accent)}>
+                <div style={{ ...kpiLabel, color: T.textLight }}>Balance</div>
+                <div style={{ ...kpiValue, color: T.text, fontSize: 16 }}>${kpi.balance.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
               </div>
               <div style={kpiChipStyle(T, kpi.todayUsd >= 0 ? T.green : T.red)}>
-                <div style={kpiLabel}>Today</div>
-                <div style={{ ...kpiValue, color: kpi.todayUsd >= 0 ? T.green : T.red }}>
+                <div style={{ ...kpiLabel, color: T.textLight }}>Today</div>
+                <div style={{ ...kpiValue, color: kpi.todayUsd >= 0 ? T.green : T.red, fontSize: 16 }}>
                   {kpi.todayUsd >= 0 ? "+" : "−"}${Math.abs(kpi.todayUsd).toFixed(0)}
                 </div>
               </div>
               <div style={kpiChipStyle(T, kpi.monthUsd >= 0 ? T.green : T.red)}>
-                <div style={kpiLabel}>Month</div>
-                <div style={{ ...kpiValue, color: kpi.monthUsd >= 0 ? T.green : T.red }}>
+                <div style={{ ...kpiLabel, color: T.textLight }}>Month</div>
+                <div style={{ ...kpiValue, color: kpi.monthUsd >= 0 ? T.green : T.red, fontSize: 16 }}>
                   {kpi.monthUsd >= 0 ? "+" : "−"}${Math.abs(kpi.monthUsd).toFixed(0)}
                 </div>
               </div>
-              <div style={kpiChipStyle(T, T.textMid)}>
-                <div style={kpiLabel}>Win Rate</div>
-                <div style={{ ...kpiValue, color: kpi.wr == null ? T.textLight : (kpi.wr >= 50 ? T.green : T.red) }}>{kpi.wr == null ? "—" : `${kpi.wr.toFixed(0)}%`}</div>
+              <div style={kpiChipStyle(T, T.purple)}>
+                <div style={{ ...kpiLabel, color: T.textLight }}>Win Rate</div>
+                <div style={{ ...kpiValue, color: kpi.wr == null ? T.textLight : (kpi.wr >= 50 ? T.green : T.red), fontSize: 16 }}>{kpi.wr == null ? "—" : `${kpi.wr.toFixed(0)}%`}</div>
               </div>
             </div>
           )}
 
           {/* Search + New Trade */}
           {page === "journal" && activeAccount && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <button onClick={() => setShowSearchModal(true)} title="Search (⌘K)" style={{
-                background: T.cardAlt, border: `1px solid ${T.border}`, color: T.textMid,
-                padding: "8px 12px", borderRadius: 8, fontSize: 12, cursor: "pointer",
+                background: T.card, border: "none", color: T.textMid,
+                padding: "11px 14px", borderRadius: 12, fontSize: 13, cursor: "pointer", fontWeight: 600,
+                boxShadow: T.shadowRaisedSm,
                 display: "flex", alignItems: "center", gap: 6,
               }}>⌕ <span className="hide-mobile">Search</span></button>
-              <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={{ ...btnP, fontSize: 12, padding: "8px 14px" }}>+ New Trade</button>
+              <button onClick={() => { setForm(emptyTrade()); setEditId(null); setShowForm(true); setTab("log"); }} style={btnP}>+ New Trade</button>
             </div>
           )}
         </div>
