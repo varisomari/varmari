@@ -3687,7 +3687,8 @@ function downloadJSON() {
     marginRight: 22,
   });
 
-  if (loading) return <div style={{ minHeight: "100vh", background: T.bg, ...center, color: T.textMid, fontFamily: mono }}>Loading...</div>;
+  // ─── Sidebar / KPI / nav state — must be declared before any early return so hooks order stays stable
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Sidebar nav items — sub-tabs of Daily are hoisted to top-level for cleaner nav
   const NAV_ITEMS = [
@@ -3701,7 +3702,7 @@ function downloadJSON() {
     { k: "calculator", icon: "◇", label: "Position Calculator", grp: "Tools" },
   ];
 
-  // Compute today's / month's / all-time PnL for the top-bar chips
+  // KPI chips for top bar
   const kpi = useMemo(() => {
     if (!activeAccount) return null;
     const todayISO = isoDate(new Date());
@@ -3722,7 +3723,7 @@ function downloadJSON() {
     return { balance, todayUsd, monthUsd, totalUsd, wr, wins, losses, n: trades.length };
   }, [activeAccount, trades]);
 
-  // Current active nav key for highlight
+  // Active nav key + helper — depend on state that always exists
   const activeNavKey = useMemo(() => {
     if (page === "calculator") return "calculator";
     if (tab === "dashboard") return "journal:dashboard";
@@ -3742,8 +3743,10 @@ function downloadJSON() {
     setSidebarOpen(false); // close mobile drawer on nav
   };
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const currentNavItem = NAV_ITEMS.find(x => x.k === activeNavKey) || NAV_ITEMS[0];
+
+  // ─── Early return for loading state (AFTER all hooks so order is stable)
+  if (loading) return <div style={{ minHeight: "100vh", background: T.bg, ...center, color: T.textMid, fontFamily: mono }}>Loading...</div>;
 
   return (
     <div style={{ background: T.bg, minHeight: "100vh", fontFamily: font, color: T.text, display: "flex" }}>
