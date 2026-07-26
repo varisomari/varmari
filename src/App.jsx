@@ -67,9 +67,9 @@ const T = {
 
   // Divider — subtle, only where needed
   divider: "#F0EEF5",
-  border: "transparent",   // Cards use shadows, not borders
-  borderLight: "transparent",
-  borderSubtle: "#EEECF3", // Only for actual dividers inside tables
+  border: "#EEECF3",       // Subtle border — used where cards need a hairline
+  borderLight: "#F5F3FA",  // Even lighter for internal dividers
+  borderSubtle: "#EEECF3", // Alias for consistency
 
   headerBg: "#FFFFFF",
 
@@ -1361,7 +1361,7 @@ function DayContextBlock({ user, activeAccount, dateISO }) {
         <div>
           {hasPre && (
             <div style={{ marginBottom: hasPost ? 12 : 0 }}>
-              <div style={{ fontSize: 10, color: T.blue, fontFamily: mono, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${T.borderLight}` }}>◧ Pre-Trade · written before</div>
+              <div style={{ fontSize: 10, color: T.blue, fontFamily: mono, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 6, paddingBottom: 6 }}>◧ Pre-Trade · written before</div>
               {preF && <div style={itemStyle}><div style={itemLabel(T.blue)}>Fundamentals</div><div style={itemBody}>{preF}</div></div>}
               {preT && <div style={itemStyle}><div style={itemLabel(T.blue)}>Technicals</div><div style={itemBody}>{preT}</div></div>}
               {preB && <div style={itemStyle}><div style={itemLabel(T.blue)}>Bias</div><div style={itemBody}>{preB}</div></div>}
@@ -1369,7 +1369,7 @@ function DayContextBlock({ user, activeAccount, dateISO }) {
           )}
           {hasPost && (
             <div>
-              <div style={{ fontSize: 10, color: T.purple, fontFamily: mono, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${T.borderLight}` }}>◨ Post-Trade · written after</div>
+              <div style={{ fontSize: 10, color: T.purple, fontFamily: mono, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 6, paddingBottom: 6 }}>◨ Post-Trade · written after</div>
               {postW && <div style={itemStyle}><div style={itemLabel(T.purple)}>What happened</div><div style={itemBody}>{postW}</div></div>}
               {postD && <div style={itemStyle}><div style={itemLabel(T.purple)}>Deviations</div><div style={itemBody}>{postD}</div></div>}
               {postL && <div style={itemStyle}><div style={itemLabel(T.purple)}>Lessons</div><div style={itemBody}>{postL}</div></div>}
@@ -2344,7 +2344,7 @@ function DisciplinePage({ user }) {
                   const rowBg = r.isToday ? T.accentBg : r.isWeekend ? T.cardAlt : T.card;
                   const dateColor = r.isToday ? T.accent : r.isFuture ? T.textLight : r.isWeekend ? T.textMid : T.text;
                   return (
-                    <tr key={r.iso} style={{ background: rowBg, borderBottom: `1px solid ${T.borderLight}` }}>
+                    <tr key={r.iso} style={{ background: rowBg }}>
                       <td style={{ padding: "10px 16px", fontWeight: r.isToday ? 700 : 500, color: dateColor }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ fontFamily: mono, fontSize: 11, color: T.textLight, minWidth: 30 }}>{dayNameShort[r.dow]}</span>
@@ -3630,22 +3630,25 @@ function downloadJSON() {
     w.document.write(html); w.document.close();
   };
 
-  const printTradeLog = () => {
+  const printTradeLog = (overrideList, overrideTitle, overrideSubtitle) => {
     const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
-    const list = filtered;
+    const list = overrideList || filtered;
+    const isSubset = !!overrideList;
 
-    // Build filter/sort summary — reflects EXACTLY what's on screen
+    // Build filter/sort summary — reflects EXACTLY what's on screen (skipped if printing a specific group)
     const activeFilters = [];
-    if (fPair !== "All") activeFilters.push(`Pair: ${fPair}`);
-    if (fResult !== "All") activeFilters.push(`Result: ${fResult}`);
-    if (fDay !== "All") activeFilters.push(`Day: ${fDay}`);
-    if (fSess !== "All") activeFilters.push(`Session: ${fSess}`);
-    if (fDir !== "All") activeFilters.push(`Direction: ${fDir}`);
-    if (fTag !== "All") activeFilters.push(`Tag: ${fTag}`);
-    if (search) activeFilters.push(`Search: "${search}"`);
+    if (!isSubset) {
+      if (fPair !== "All") activeFilters.push(`Pair: ${fPair}`);
+      if (fResult !== "All") activeFilters.push(`Result: ${fResult}`);
+      if (fDay !== "All") activeFilters.push(`Day: ${fDay}`);
+      if (fSess !== "All") activeFilters.push(`Session: ${fSess}`);
+      if (fDir !== "All") activeFilters.push(`Direction: ${fDir}`);
+      if (fTag !== "All") activeFilters.push(`Tag: ${fTag}`);
+      if (search) activeFilters.push(`Search: "${search}"`);
+    }
     const sortLabelMap = { date: "Date", day: "Day", session: "Session", pair: "Pair", direction: "Direction", risk: "Risk", entry: "Entry", exit: "Exit", rr: "R:R", max_r: "Max R", max_adverse_r: "Rev R", pnl_pct: "PnL", result: "Result" };
     const sortLabel = `${sortLabelMap[sortCol] || sortCol} ${sortDir === "asc" ? "↑" : "↓"}`;
-    const groupLabel = groupBy === "week" ? "Weekly" : groupBy === "month" ? "Monthly" : null;
+    const groupLabel = isSubset ? null : (groupBy === "week" ? "Weekly" : groupBy === "month" ? "Monthly" : null);
     const totalPnl = list.reduce((s, t) => s + (parseFloat(t.pnl_pct) || 0), 0);
     const totalUsd = list.reduce((s, t) => s + (parseFloat(t.pnl_usd) || 0), 0);
     const wins = list.filter(t => t.result === "Win").length;
@@ -3675,7 +3678,7 @@ function downloadJSON() {
     };
 
     let rows = "";
-    if (groupBy === "none" || !groupBy) {
+    if (isSubset || groupBy === "none" || !groupBy) {
       rows = list.map(renderTr).join("");
     } else {
       // Group by week (Monday ISO) or month (YYYY-MM), preserving current sort order
@@ -3754,8 +3757,8 @@ function downloadJSON() {
 </style></head><body>
 <div class="page">
   <div class="header">
-    <h1>Trade Log · ${esc(activeAccount?.name || "")}</h1>
-    <div class="meta">${list.length} trades · Generated ${new Date().toLocaleString()}</div>
+    <h1>${esc(overrideTitle || "Trade Log")} · ${esc(activeAccount?.name || "")}</h1>
+    <div class="meta">${overrideSubtitle ? esc(overrideSubtitle) + " · " : ""}${list.length} trades · Generated ${new Date().toLocaleString()}</div>
   </div>
   ${(activeFilters.length > 0 || groupLabel || sortCol !== "date" || sortDir !== "desc") ? `<div class="filter-bar">
     ${activeFilters.length > 0 ? `<span class="k">Filters:</span>${activeFilters.map(f => `<span class="chip">${esc(f)}</span>`).join("")}` : `<span class="k">Filters:</span><span class="chip">None</span>`}
@@ -4945,14 +4948,14 @@ function downloadJSON() {
 
                           {/* WINS COLUMN */}
                           <div>
-                            <div style={{ fontSize: 10, color: T.green, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.borderLight}` }}>
+                            <div style={{ fontSize: 10, color: T.green, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8, paddingBottom: 6 }}>
                               Wins · Max R Reached
                             </div>
                             {winRows.length === 0 ? (
                               <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic", padding: 12 }}>No wins logged with Max R.</div>
                             ) : (
                               winRows.map(row => (
-                                <div key={row.r} style={{ display: "grid", gridTemplateColumns: "60px 1fr 40px", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.borderLight}` }}>
+                                <div key={row.r} style={{ display: "grid", gridTemplateColumns: "60px 1fr 40px", gap: 8, alignItems: "center", padding: "6px 0" }}>
                                   <span style={{ fontSize: 13, fontFamily: mono, color: T.green, fontWeight: 700, textAlign: "right" }}>+{fmtR(row.r)}</span>
                                   <div style={{
                                     height: 16, width: `${(row.count / maxBar) * 100}%`,
@@ -4971,14 +4974,14 @@ function downloadJSON() {
 
                           {/* LOSSES COLUMN */}
                           <div>
-                            <div style={{ fontSize: 10, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${T.borderLight}` }}>
+                            <div style={{ fontSize: 10, color: T.red, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, marginBottom: 8, paddingBottom: 6 }}>
                               Losses · Max R Reversed
                             </div>
                             {lossRows.length === 0 ? (
                               <div style={{ fontSize: 12, color: T.textLight, fontStyle: "italic", padding: 12 }}>No losses logged with Max R Reversed.</div>
                             ) : (
                               lossRows.map(row => (
-                                <div key={row.r} style={{ display: "grid", gridTemplateColumns: "60px 1fr 40px", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.borderLight}` }}>
+                                <div key={row.r} style={{ display: "grid", gridTemplateColumns: "60px 1fr 40px", gap: 8, alignItems: "center", padding: "6px 0" }}>
                                   <span style={{ fontSize: 13, fontFamily: mono, color: T.red, fontWeight: 700, textAlign: "right" }}>−{fmtR(row.r)}</span>
                                   <div style={{
                                     height: 16, width: `${(row.count / maxBar) * 100}%`,
@@ -5253,6 +5256,16 @@ function downloadJSON() {
                                       <div style={{ background: gPnl >= 0 ? T.green : T.red, padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 800, color: "#fff", boxShadow: gPnl >= 0 ? T.shadowGreenGlow : T.shadowRedGlow }}>
                                         {fP(gPnl)} · {fU(gUsd)}
                                       </div>
+                                      <button
+                                        onClick={() => printTradeLog(g.trades, groupBy === "week" ? "Weekly Trade Log" : "Monthly Trade Log", labelFor(g.key))}
+                                        title="Print only this group as PDF"
+                                        style={{
+                                          background: T.card, padding: "6px 12px", borderRadius: 8,
+                                          fontSize: 11, fontWeight: 700, color: T.accent,
+                                          boxShadow: T.shadowXs, border: "none", cursor: "pointer",
+                                          display: "inline-flex", alignItems: "center", gap: 4,
+                                        }}
+                                      >⏷ PDF</button>
                                     </div>
                                   </div>
                                 </td>
@@ -5262,8 +5275,8 @@ function downloadJSON() {
                           g.trades.forEach(t => {
                             const i = rowIndex++;
                             rows.push(
-                              <tr key={t.id} style={{ background: T.card, borderBottom: `1px solid ${T.borderSubtle}` }}>
-                                <td style={{ padding: "8px 7px", whiteSpace: "nowrap", borderBottom: `1px solid ${T.borderLight}` }}>
+                              <tr key={t.id}>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}`, whiteSpace: "nowrap" }}>
                                   {t.date}
                                   {(() => {
                                     const d = daysInTrade(t);
@@ -5271,16 +5284,16 @@ function downloadJSON() {
                                     return <span title={`Held ${d} days${t.exit_date ? ` (exit ${t.exit_date})` : ""}`} style={{ display: "inline-block", marginLeft: 6, padding: "1px 6px", background: T.purpleBg, color: T.purple, borderRadius: 4, fontSize: 9, fontWeight: 700, fontFamily: mono, verticalAlign: "middle" }}>{d}d</span>;
                                   })()}
                                 </td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.day?.substring(0, 3)}</td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontSize: 10, color: T.textMid }}>{t.session}</td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.pair} type="pair" /></td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.direction} /></td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.risk}%</td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.entry}</td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.exit}</td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>{t.rr || "—"}</td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, color: t.result === "Win" && t.max_r ? T.green : T.textLight }}>{t.result === "Win" ? (t.max_r || "—") : "—"}</td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 10, color: T.textMid }}>{t.day?.substring(0, 3)}</td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 10, color: T.textMid }}>{t.session}</td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}><Pill text={t.pair} type="pair" /></td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}><Pill text={t.direction} /></td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}>{t.risk}%</td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}>{t.entry}</td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}>{t.exit}</td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}>{t.rr || "—"}</td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}`, color: t.result === "Win" && t.max_r ? T.green : T.textLight }}>{t.result === "Win" ? (t.max_r || "—") : "—"}</td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}>
                                   {(() => {
                                     if (t.result !== "Loss") return <span style={{ color: T.textLight }}>—</span>;
                                     const v = parseFloat(t.max_adverse_r);
@@ -5288,19 +5301,18 @@ function downloadJSON() {
                                     return <span style={{ color: T.red, fontWeight: 600 }}>−{v.toFixed(2)}R</span>;
                                   })()}
                                 </td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, fontWeight: 600 }}>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}`, fontWeight: 600 }}>
                                   <span style={{ color: cP(t.pnl_pct) }}>{fP(t.pnl_pct)}</span><br />
                                   <span style={{ fontSize: 9, color: T.textLight }}>{fU(t.pnl_usd)}</span>
                                 </td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}><Pill text={t.result} /></td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}`, whiteSpace: "nowrap" }}>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}><Pill text={t.result} /></td>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}`, whiteSpace: "nowrap" }}>
                                   {t.exec_link && <a href={t.exec_link} target="_blank" rel="noreferrer" style={{ color: T.blue, fontSize: 9, marginRight: 5, textDecoration: "none", fontWeight: 600 }}>Chart</a>}
                                   {t.bias_link && <a href={t.bias_link} target="_blank" rel="noreferrer" style={{ color: T.purple, fontSize: 9, textDecoration: "none", fontWeight: 600 }}>Bias</a>}
                                 </td>
-                                <td style={{ padding: "8px 7px", borderBottom: `1px solid ${T.borderLight}` }}>
+                                <td style={{ padding: "10px 8px", borderBottom: `1px solid ${T.borderSubtle}` }}>
                                   <button onClick={() => setReplayTrade(t)} title="Replay" style={{ background: "none", border: "none", cursor: "pointer", color: T.purple, fontSize: 12, padding: "2px", marginRight: 4 }}>▶</button>
                                   <button onClick={() => printSingleTrade(t)} title="This trade as PDF" style={{ background: "none", border: "none", cursor: "pointer", color: T.accent, fontSize: 11, padding: "2px", marginRight: 4 }}>⏷</button>
-                                  <button onClick={() => exportDailyPDF({ user, activeAccount, dateISO: t.date })} title="Full day as PDF" style={{ background: "none", border: "none", cursor: "pointer", color: T.textMid, fontSize: 10, padding: "2px", marginRight: 4 }}>📅</button>
                                   <button onClick={() => editTrade(t)} style={{ background: "none", border: "none", cursor: "pointer", color: T.amber, fontSize: 12, padding: "2px" }}>✎</button>
                                   <button onClick={() => deleteTrade(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontSize: 12, padding: "2px" }}>✕</button>
                                 </td>
