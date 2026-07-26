@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, CartesianGrid, ReferenceLine } from "recharts";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
@@ -5022,6 +5022,31 @@ function downloadJSON() {
   );
 }
 
+// Error boundary — shows the error message inline instead of a blank white/cream page
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error("[Varmari] render error:", err, info); }
+  render() {
+    if (this.state.err) {
+      return (
+        <div style={{ minHeight: "100vh", padding: 24, background: "#FBFAF6", fontFamily: "system-ui, sans-serif", color: "#2C2418" }}>
+          <div style={{ maxWidth: 720, margin: "40px auto", background: "#fff", border: "1px solid #E8E2D5", borderRadius: 12, padding: 24 }}>
+            <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: "#B73A2C", fontWeight: 700, marginBottom: 8 }}>Render Error</div>
+            <h1 style={{ margin: "0 0 8px 0", fontSize: 18 }}>Something crashed while drawing the page.</h1>
+            <div style={{ fontSize: 12, color: "#6B5D4F", marginBottom: 16 }}>Copy this message and send it to Claude:</div>
+            <pre style={{ background: "#FDF0EF", border: "1px solid #E8E2D5", borderRadius: 6, padding: 12, fontSize: 12, color: "#B73A2C", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+{String(this.state.err && (this.state.err.stack || this.state.err.message || this.state.err))}
+            </pre>
+            <button onClick={() => { this.setState({ err: null }); window.location.reload(); }} style={{ marginTop: 12, padding: "8px 16px", fontSize: 12, background: "#C97140", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>Reload</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(true);
@@ -5059,5 +5084,5 @@ export default function App() {
   const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); };
   if (checking) return <div style={{ minHeight: "100vh", background: T.bg, ...center, color: T.textMid, fontFamily: mono }}>Loading...</div>;
   if (!user) return <LoginScreen onLogin={setUser} />;
-  return <Journal user={user} onLogout={handleLogout} />;
+  return <ErrorBoundary><Journal user={user} onLogout={handleLogout} /></ErrorBoundary>;
 }
