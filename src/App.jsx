@@ -1652,8 +1652,7 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
             value={plan.pre_fundamentals}
             onChange={e => updateField("pre_fundamentals", e.target.value)}
             onBlur={handleBlur}
-            placeholder="Macro context, data releases, central banks, sentiment, capital flows..."
-            style={{ ...bigTA, minHeight: 240 }}
+            style={{ ...bigTA, minHeight: 320 }}
           />
         </div>
         <div>
@@ -1662,8 +1661,7 @@ function DailyPlanPage({ user, activeAccount, accountTrades, riskGauges, onNewTr
             value={plan.pre_technicals}
             onChange={e => updateField("pre_technicals", e.target.value)}
             onBlur={handleBlur}
-            placeholder="EURUSD: daily broken at 1.0850, watching retest. GBPJPY: trending, pullback to 190.50..."
-            style={{ ...bigTA, minHeight: 240 }}
+            style={{ ...bigTA, minHeight: 320 }}
           />
         </div>
       </div>
@@ -3520,7 +3518,14 @@ function downloadJSON() {
   const hasActiveFilters = fPair !== "All" || fResult !== "All" || fDay !== "All" || fSess !== "All" || fDir !== "All" || fTag !== "All" || search !== "";
   const toggleSort = col => { if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol(col); setSortDir("desc"); } };
 
-  const printSingleTrade = (t) => {
+  const printSingleTrade = async (t) => {
+    // Open the popup SYNCHRONOUSLY inside the click handler so the browser
+    // treats it as a user-initiated action (avoids popup blocker after await).
+    const w = window.open("about:blank", "_blank");
+    if (!w) { alert("Pop-up blocked — please allow popups for this site."); return; }
+    // Show a loading state while we fetch
+    w.document.write("<title>Loading…</title><style>body{font-family:sans-serif;padding:40px;color:#666}</style><div>Loading trade PDF…</div>");
+
     const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
     const pnlPct = parseFloat(t.pnl_pct) || 0;
     const pnlUsd = parseFloat(t.pnl_usd) || 0;
@@ -3528,6 +3533,25 @@ function downloadJSON() {
     const types = (t.trade_types || "").split(",").map(s => s.trim()).filter(Boolean);
     const noteBody = (t.notes_trade || "").trim() || [t.notes_technical, t.notes_fundamental].filter(Boolean).join("\n\n").trim();
     const mistakes = (t.notes_mistakes || "").trim();
+
+    // Fetch daily plan context for this trade's date — pre-trade notes (fundamentals + technicals)
+    let dailyFundamentals = "";
+    let dailyTechnicals = "";
+    if (t.date && activeAccount) {
+      try {
+        const { data: planData } = await supabase.from("daily_plans")
+          .select("pre_fundamentals, pre_technicals")
+          .eq("account_id", activeAccount.id)
+          .eq("date", String(t.date).slice(0, 10))
+          .maybeSingle();
+        if (planData) {
+          dailyFundamentals = (planData.pre_fundamentals || "").trim();
+          dailyTechnicals = (planData.pre_technicals || "").trim();
+        }
+      } catch (err) {
+        console.warn("Could not fetch daily plan for print:", err);
+      }
+    }
 
     // Extract image URLs from any text field (jpg/png/webp/gif) - inline as thumbnails
     const extractImages = (txt) => {
@@ -3537,6 +3561,8 @@ function downloadJSON() {
     };
     const noteImgs = extractImages(noteBody);
     const mistakeImgs = extractImages(mistakes);
+    const fundImgs = extractImages(dailyFundamentals);
+    const techImgs = extractImages(dailyTechnicals);
     const linkImgs = [];
     if (t.exec_link && /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(t.exec_link)) linkImgs.push({ url: t.exec_link, label: "Execution" });
     if (t.bias_link && /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(t.bias_link)) linkImgs.push({ url: t.bias_link, label: "Bias" });
@@ -3562,6 +3588,12 @@ function downloadJSON() {
   .section-title { font-size: 8pt; letter-spacing: 1.5px; text-transform: uppercase; color: #C97140; margin: 0 0 4px 0; font-weight: 700; }
   .section-body { font-size: 10pt; white-space: pre-wrap; padding: 8px 10px; background: #FAF8F4; border-left: 3px solid #E8E2D5; border-radius: 2px; line-height: 1.55; word-wrap: break-word; overflow-wrap: break-word; }
   .mistakes { border-left-color: #B73A2C; background: #FDF0EF; }
+  .pre-trade-block { padding: 12px 14px; background: #F5F3FF; border-radius: 6px; margin-bottom: 12px; page-break-inside: avoid; }
+  .pre-trade-label { font-size: 9pt; letter-spacing: 1.5px; text-transform: uppercase; color: #6D5AE6; font-weight: 800; margin-bottom: 8px; }
+  .pre-trade-block .section { margin-bottom: 8px; }
+  .pre-trade-block .section:last-child { margin-bottom: 0; }
+  .pre-fund { border-left-color: #6D5AE6; background: #ffffff; }
+  .pre-tech { border-left-color: #3B82F6; background: #ffffff; }
   .empty { color: #9C8E7E; font-style: italic; }
   .type-pill { display: inline-block; background: #F3E8FF; color: #7C3AED; padding: 2px 8px; border-radius: 4px; margin: 0 4px 4px 0; font-weight: 600; font-size: 9pt; }
   .img-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; page-break-inside: avoid; }
@@ -3599,6 +3631,20 @@ function downloadJSON() {
     ${linkImgBlock}
   </div>` : ""}
 
+  ${(dailyFundamentals || dailyTechnicals) ? `<div class="section pre-trade-block">
+    <div class="pre-trade-label">◈ Pre-Trade Plan · Written ${esc(String(t.date).slice(0, 10))}</div>
+    ${dailyFundamentals ? `<div class="section">
+      <div class="section-title">Fundamentals (Pre-Trade)</div>
+      <div class="section-body pre-fund">${esc(dailyFundamentals)}</div>
+      ${imgBlock(fundImgs)}
+    </div>` : ""}
+    ${dailyTechnicals ? `<div class="section">
+      <div class="section-title">Technicals / Bias (Pre-Trade)</div>
+      <div class="section-body pre-tech">${esc(dailyTechnicals)}</div>
+      ${imgBlock(techImgs)}
+    </div>` : ""}
+  </div>` : ""}
+
   <div class="section">
     <div class="section-title">Trade Notes — Setup, Thesis, What Happened</div>
     <div class="section-body">${noteBody ? esc(noteBody) : '<span class="empty">No notes.</span>'}</div>
@@ -3625,9 +3671,10 @@ function downloadJSON() {
   }
 </script>
 </body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) { alert("Pop-up blocked — please allow popups for this site."); return; }
-    w.document.write(html); w.document.close();
+    // Reuse the popup opened at the start of this function
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
   };
 
   const printTradeLog = (overrideList, overrideTitle, overrideSubtitle) => {
